@@ -35,6 +35,7 @@ const (
 	PortGeneve                 // +28: GENEVE (UDP)
 	PortVXLAN                  // +29: VXLAN (UDP)
 	PortVXLANGpe               // +30: VXLAN-GPE (UDP)
+	PortGUE                    // +31: GUE (UDP)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -67,6 +68,7 @@ func All() []Protocol {
 		geneveProto{},
 		vxlanProto{},
 		vxlanGpeProto{},
+		gueProto{},
 	}
 }
 
@@ -128,6 +130,8 @@ func PortOffset(p Protocol) int {
 		return PortVXLAN
 	case "vxlan-gpe":
 		return PortVXLANGpe
+	case "gue":
+		return PortGUE
 	}
 	return -1
 }

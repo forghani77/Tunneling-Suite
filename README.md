@@ -27,6 +27,7 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `geneve`     | datagram  | GENEVE (RFC 8926) over UDP (8-byte header + VNI)  | no            |
 | `vxlan`      | datagram  | VXLAN (RFC 7348) over UDP (8-byte header + VNI)   | no            |
 | `vxlan-gpe`  | datagram  | VXLAN-GPE over UDP (8-byte header + next protocol) | no            |
+| `gue`        | datagram  | GUE over UDP (extensible header + 16-bit proto/ctype) | no            |
 | `icmp`       | datagram  | ICMP echo (RFC 792) via raw sockets, IP protocol 1 | **yes**       |
 | `icmpv6`     | datagram  | ICMPv6 (RFC 4443) via raw sockets, IP protocol 58  | **yes**       |
 | `wireguard`  | datagram  | kernel WireGuard interface (`ip` + `wg` tools)     | **yes**       |
@@ -76,6 +77,14 @@ Notes:
   = `0x03`) instead of an EtherType. The I and P flags mark a valid VNI
   carrying the inner protocol; the test frame is stamped as IPv4. Runs
   without root.
+- `gue` is Generic UDP Encapsulation (draft-ietf-nvo3-gue, unratified — no
+  RFC): the 4-byte v0 base header `[Ver 2b][C 1b][Hlen 5b][Proto/ctype
+  16b][Flags 8b]` plays the same "what is the inner payload" role as
+  GENEVE's Protocol Type, but the 16-bit field holds an IANA IP protocol
+  number — the draft's own data-message example stamps 94 (IPIP), and so
+  does the harness. A 32-bit VNI rides in one extension word flagged by
+  the first (most significant) flag bit, per the GUE extension drafts.
+  Runs without root.
 - `icmp` looks like ordinary ping traffic: the client sends ICMP echo
   requests (type 8) carrying the test frames, and the server answers with
   echo replies (type 0) over a raw `ip4:1` socket. The kernel auto-answers
@@ -226,6 +235,7 @@ tunnel-suit client [flags]
 | +28       | geneve (UDP)                            |
 | +29       | vxlan (UDP)                            |
 | +30       | vxlan-gpe (UDP)                        |
+| +31       | gue (UDP)                              |
 
 ## How a test works
 
@@ -313,8 +323,8 @@ cmd/tunnel-suit/        CLI entry point (server/client subcommands)
 internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         and one file per protocol (tcp, udp, tls, quic,
                         h3, kcp, shadowsocks, gre, ipip, sit, 6to4, geneve,
-                        vxlan, vxlan-gpe, icmp, icmpv6, wireguard, amnezia,
-                        amnezia2, tap,
+                        vxlan, vxlan-gpe, gue, icmp, icmpv6, wireguard,
+                        amnezia, amnezia2, tap,
                         http, https, ws, wss, anytls, naive, smtp)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)
 internal/report/        result model, terminal table, JSON serialization
