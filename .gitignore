@@ -1,0 +1,18 @@
+# compiled binary
+/tunnel-suit
+
+# benchmark JSON reports
+report-*.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# generated TLS certs / keys
+*.crt
+*.key
+*.pem
+
+# smtp-tunnel-proxy runtime
+smtp-tunnel-proxy/server.log
