@@ -34,6 +34,7 @@ const (
 	PortSixToFour              // +27: raw IPv4 socket (port is bookkeeping only)
 	PortGeneve                 // +28: GENEVE (UDP)
 	PortVXLAN                  // +29: VXLAN (UDP)
+	PortVXLANGpe               // +30: VXLAN-GPE (UDP)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -65,6 +66,7 @@ func All() []Protocol {
 		sixToFourProto{},
 		geneveProto{},
 		vxlanProto{},
+		vxlanGpeProto{},
 	}
 }
 
@@ -124,6 +126,8 @@ func PortOffset(p Protocol) int {
 		return PortGeneve
 	case "vxlan":
 		return PortVXLAN
+	case "vxlan-gpe":
+		return PortVXLANGpe
 	}
 	return -1
 }
@@ -186,6 +190,9 @@ var NameAliases = map[string]string{
 	"sixfour":     "6to4",
 	"six2four":    "6to4",
 	"rfc3056":     "6to4",
+	"vxlangpe":    "vxlan-gpe",
+	"vxgpe":       "vxlan-gpe",
+	"gpe":         "vxlan-gpe",
 }
 
 // NormalizeName canonicalizes a user-supplied protocol name.

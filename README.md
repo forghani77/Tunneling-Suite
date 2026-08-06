@@ -26,6 +26,7 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `6to4`       | datagram  | 6to4 (RFC 3056) via raw sockets, IP protocol 41   | **yes**       |
 | `geneve`     | datagram  | GENEVE (RFC 8926) over UDP (8-byte header + VNI)  | no            |
 | `vxlan`      | datagram  | VXLAN (RFC 7348) over UDP (8-byte header + VNI)   | no            |
+| `vxlan-gpe`  | datagram  | VXLAN-GPE over UDP (8-byte header + next protocol) | no            |
 | `icmp`       | datagram  | ICMP echo (RFC 792) via raw sockets, IP protocol 1 | **yes**       |
 | `icmpv6`     | datagram  | ICMPv6 (RFC 4443) via raw sockets, IP protocol 58  | **yes**       |
 | `wireguard`  | datagram  | kernel WireGuard interface (`ip` + `wg` tools)     | **yes**       |
@@ -66,6 +67,15 @@ Notes:
   datagram carries the 8-byte VXLAN header (flags with the I bit set, a
   24-bit VNI stamped per tunnel), and the test frame rides in place of the
   inner Ethernet frame. Runs without root.
+- `vxlan-gpe` is VXLAN with the Generic Protocol Extension
+  (draft-ietf-nvo3-vxlan-gpe; RFC 9638's NVO3 encapsulation considerations
+  record why GENEVE won over it): the header stays 8 bytes, but the
+  24-bit reserved field becomes a 16-bit reserved field plus an 8-bit **Next
+  Protocol** — the same role GENEVE's Protocol Type plays in RFC 8926, only
+  encoded as an IANA registry value (IPv4 = `0x01`, IPv6 = `0x02`, Ethernet
+  = `0x03`) instead of an EtherType. The I and P flags mark a valid VNI
+  carrying the inner protocol; the test frame is stamped as IPv4. Runs
+  without root.
 - `icmp` looks like ordinary ping traffic: the client sends ICMP echo
   requests (type 8) carrying the test frames, and the server answers with
   echo replies (type 0) over a raw `ip4:1` socket. The kernel auto-answers
@@ -215,6 +225,7 @@ tunnel-suit client [flags]
 | +27       | 6to4 (raw socket; port is bookkeeping)  |
 | +28       | geneve (UDP)                            |
 | +29       | vxlan (UDP)                            |
+| +30       | vxlan-gpe (UDP)                        |
 
 ## How a test works
 
@@ -302,8 +313,8 @@ cmd/tunnel-suit/        CLI entry point (server/client subcommands)
 internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         and one file per protocol (tcp, udp, tls, quic,
                         h3, kcp, shadowsocks, gre, ipip, sit, 6to4, geneve,
-                        vxlan, icmp, icmpv6, wireguard, amnezia, amnezia2,
-                        tap,
+                        vxlan, vxlan-gpe, icmp, icmpv6, wireguard, amnezia,
+                        amnezia2, tap,
                         http, https, ws, wss, anytls, naive, smtp)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)
 internal/report/        result model, terminal table, JSON serialization
