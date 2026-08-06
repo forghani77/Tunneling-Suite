@@ -33,7 +33,8 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `https`      | stream    | HTTP CONNECT inside TLS                                  | no            |
 | `ws`         | stream    | WebSocket tunnel (RFC 6455, binary messages)             | no            |
 | `wss`        | stream    | WebSocket over TLS (`wss://`)                            | no            |
-| `anytls`     | stream    | AnyTLS — TLS session protocol from anytls-go             | no            || `naive`      | stream      | NaiveProxy — TLS + HTTP/2 CONNECT + padding (pure Go)    | no            |
+| `anytls`     | stream    | AnyTLS — TLS session protocol from anytls-go             | no            |
+| `naive`      | stream    | NaiveProxy — TLS + HTTP/2 CONNECT + padding (pure Go)    | no            |
 | `smtp`       | stream      | SMTP tunnel — fake Postfix handshake then raw stream     | no            |
 
 Notes:
