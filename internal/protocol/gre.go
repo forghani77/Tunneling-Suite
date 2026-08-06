@@ -16,6 +16,7 @@ func (greProto) Overhead() int   { return 46 } // 20 outer IP + 4 GRE + 20 inner
 func (greProto) NeedsRoot() bool { return true }
 
 var greCfg = rawConfig{
+	name:     "gre",
 	protoNum: ipProtoGRE,
 	encapsulate: func(serverSide bool, self, peer net.IP, id uint16, frame []byte) []byte {
 		return greEnvelope(craftInnerIPv4(self, peer, id, frame))

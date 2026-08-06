@@ -19,6 +19,7 @@ func (sitProto) Overhead() int   { return 62 } // 20 outer IPv4 + 40 inner IPv6 
 func (sitProto) NeedsRoot() bool { return true }
 
 var sitCfg = rawConfig{
+	name:     "sit",
 	protoNum: ipProtoSIT,
 	encapsulate: func(serverSide bool, self, peer net.IP, id uint16, frame []byte) []byte {
 		return craftInnerIPv6(id, frame)

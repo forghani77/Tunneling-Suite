@@ -69,6 +69,7 @@ func icmp4Decap(payload []byte) (uint16, []byte, error) {
 }
 
 var icmpCfg = rawConfig{
+	name:     "icmp",
 	protoNum: ipProtoICMP,
 	encapsulate: func(serverSide bool, self, peer net.IP, id uint16, frame []byte) []byte {
 		return icmp4Encap(serverSide, id, frame)

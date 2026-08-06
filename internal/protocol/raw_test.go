@@ -8,7 +8,7 @@ import (
 )
 
 // rawProtocols are the raw layer-3 protocols sharing the rawServer.
-var rawProtocols = []Protocol{greProto{}, ipipProto{}, sitProto{}, icmpProto{}}
+var rawProtocols = []Protocol{greProto{}, ipipProto{}, sitProto{}, sixToFourProto{}, icmpProto{}}
 
 // rawCfgFor returns the rawConfig for a raw layer-3 protocol.
 func rawCfgFor(p Protocol) rawConfig {
@@ -19,6 +19,8 @@ func rawCfgFor(p Protocol) rawConfig {
 		return ipipCfg
 	case "sit":
 		return sitCfg
+	case "6to4":
+		return sixFourCfg
 	case "icmp":
 		return icmpCfg
 	}
@@ -51,6 +53,51 @@ func startRawServer(t *testing.T, p Protocol) func() {
 		}
 	}()
 	return func() { _ = srv.Close() }
+}
+
+// TestSixToFourAddr verifies the RFC 3056 address derivation and the
+// 6to4 inner-packet round trip.
+func TestSixToFourAddr(t *testing.T) {
+	cases := []struct {
+		v4   string
+		want string
+	}{
+		{"127.0.0.1", "2002:7f00:1::"},
+		{"192.168.1.1", "2002:c0a8:101::"},
+		{"8.8.8.8", "2002:808:808::"},
+		{"10.0.0.1", "2002:a00:1::"},
+	}
+	for _, c := range cases {
+		got := sixToFourAddr(net.ParseIP(c.v4))
+		if got.String() != c.want {
+			t.Errorf("sixToFourAddr(%s) = %s, want %s", c.v4, got, c.want)
+		}
+	}
+
+	// Round trip: craft an inner 6to4 packet and strip it back.
+	self, peer := net.ParseIP("192.168.1.1"), net.ParseIP("10.0.0.2")
+	frame, err := EncodeFrame(FramePing, 7, time.Now(), DefaultRTTSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := craftInnerIPv6To4(self, peer, 0x1234, frame)
+	id, got, err := stripInnerIPv6(b)
+	if err != nil {
+		t.Fatalf("strip: %v", err)
+	}
+	if id != 0x1234 {
+		t.Errorf("id = %#x, want 0x1234", id)
+	}
+	if string(got) != string(frame) {
+		t.Errorf("frame mismatch: got %d bytes, want %d", len(got), len(frame))
+	}
+	// The inner source/destination must be the 2002::/48 forms of the
+	// outer endpoints, not the fixed ULA addresses sit uses.
+	src, dst := net.IP(b[8:24]), net.IP(b[24:40])
+	if src.String() != sixToFourAddr(self).String() || dst.String() != sixToFourAddr(peer).String() {
+		t.Errorf("inner addrs = %s -> %s, want %s -> %s",
+			src, dst, sixToFourAddr(self), sixToFourAddr(peer))
+	}
 }
 
 // TestRawLoopbackTunnel drives a full client/server round trip on 127.0.0.1

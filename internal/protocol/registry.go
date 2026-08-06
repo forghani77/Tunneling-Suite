@@ -31,6 +31,7 @@ const (
 	PortNaive                  // +24: NaiveProxy
 	PortSMTP                   // +25: SMTP tunnel
 	PortICMP                   // +26: raw IPv4 socket (port is bookkeeping only)
+	PortSixToFour              // +27: raw IPv4 socket (port is bookkeeping only)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -59,6 +60,7 @@ func All() []Protocol {
 		naiveProto{},
 		smtpProto{},
 		icmpProto{},
+		sixToFourProto{},
 	}
 }
 
@@ -112,6 +114,8 @@ func PortOffset(p Protocol) int {
 		return PortSMTP
 	case "icmp":
 		return PortICMP
+	case "6to4":
+		return PortSixToFour
 	}
 	return -1
 }
@@ -170,6 +174,10 @@ var NameAliases = map[string]string{
 	"icmp4":       "icmp",
 	"icmpv4":      "icmp",
 	"ping":        "icmp",
+	"six-to-four": "6to4",
+	"sixfour":     "6to4",
+	"six2four":    "6to4",
+	"rfc3056":     "6to4",
 }
 
 // NormalizeName canonicalizes a user-supplied protocol name.

@@ -30,7 +30,7 @@ Usage:
   tunnel-suit client [flags]   run the client (drives the tests)
 
 Protocols tested: tcp, udp, tls, quic, http3 (QUIC), kcp, shadowsocks,
-                  gre, ipip, sit, icmp, icmpv6 (layer-3, needs root),
+                  gre, ipip, sit, 6to4, icmp, icmpv6 (layer-3, needs root),
                   wireguard, amnezia, amnezia2, tap (layer-2, needs root),
                   http, https, ws, wss, anytls, naive, smtp
 

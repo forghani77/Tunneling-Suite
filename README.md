@@ -23,6 +23,7 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `gre`        | datagram  | GRE (RFC 2784) via raw sockets, IP protocol 47     | **yes**       |
 | `ipip`       | datagram  | IP-in-IP (RFC 2003) via raw sockets, IP protocol 4 | **yes**       |
 | `sit`        | datagram  | 6in4 (RFC 4213) via raw sockets, IP protocol 41    | **yes**       |
+| `6to4`       | datagram  | 6to4 (RFC 3056) via raw sockets, IP protocol 41   | **yes**       |
 | `icmp`       | datagram  | ICMP echo (RFC 792) via raw sockets, IP protocol 1 | **yes**       |
 | `icmpv6`     | datagram  | ICMPv6 (RFC 4443) via raw sockets, IP protocol 58  | **yes**       |
 | `wireguard`  | datagram  | kernel WireGuard interface (`ip` + `wg` tools)     | **yes**       |
@@ -39,9 +40,18 @@ Results are rendered as a terminal table and written to a JSON report file.
 
 Notes:
 
-- Layer-3 protocols (GRE/IPIP/SIT/ICMP/ICMPv6) need root/`CAP_NET_RAW`. The
-  harness crafts synthetic inner IP packets with valid headers; test frames
-  are the payload.
+- Layer-3 protocols (GRE/IPIP/SIT/6to4/ICMP/ICMPv6) need root/`CAP_NET_RAW`.
+  The harness crafts synthetic inner IP packets with valid headers; test
+  frames are the payload.
+- `sit` and `6to4` share the same IPv6-in-IPv4 wire format (inner IPv6
+  packet in an outer IPv4 packet, IP protocol 41) but use different inner
+  addressing: `sit` (RFC 4213 6in4) stamps fixed RFC 4193 ULA addresses
+  (  `fd00::1` ⇄ `fd00::2`), while `6to4` (RFC 3056) derives the inner
+  addresses from the tunnel endpoints' IPv4 addresses using the well-known
+  `2002::/16` prefix (`2002:V4ADDR::/48`), the classic automatic-6to4
+  scheme. Both share IP protocol 41, so on a host running both servers each
+  will echo the other's probes too (benign: both echo the identical frame,
+  and sessions are per-client).
 - `icmp` looks like ordinary ping traffic: the client sends ICMP echo
   requests (type 8) carrying the test frames, and the server answers with
   echo replies (type 0) over a raw `ip4:1` socket. The kernel auto-answers
@@ -102,10 +112,11 @@ Notes:
 - `bip`, `h3`, `ss`, `wg`, `awg`/`amneziawg`, `awg2`, `l2tap`/`l2`,
   `http-connect`/`httptunnel`, `websocket`/`wstunnel`,
   `secure-websocket`/`wss-tunnel`, `any-tls`, `naiveproxy`, `icmp6`, `icmp4`,
-  `ping` and the common misspellings `amnesia`/`amnesia2`/`amensia`/`amensia2`
-  are accepted as aliases (`awg` → `amnezia`, `awg2` → `amnezia2`, `bip` →
-  `sit`, `icmp6` → `icmpv6`, `icmp4`/`ping` → `icmp`, `l2tap` → `tap`,
-  `naiveproxy` → `naive`, ...).
+  `ping`, `six-to-four`/`sixfour`/`six2four`, and the common misspellings
+  `amnesia`/`amnesia2`/`amensia`/`amensia2` are accepted as aliases
+  (`awg` → `amnezia`, `awg2` → `amnezia2`, `bip` → `sit`, `icmp6` →
+  `icmpv6`, `icmp4`/`ping` → `icmp`, `six-to-four` → `6to4`, `l2tap` →
+  `tap`, `naiveproxy` → `naive`, ...).
 
 ## Quick start
 
@@ -187,6 +198,7 @@ tunnel-suit client [flags]
 | +19 … +24 | http, https, ws, wss, anytls, naive |
 | +25       | smtp tunnel                    |
 | +26       | icmp (raw socket; port is bookkeeping) |
+| +27       | 6to4 (raw socket; port is bookkeeping)  |
 
 ## How a test works
 
@@ -273,9 +285,9 @@ also included in the JSON report under `throughput`.
 cmd/tunnel-suit/        CLI entry point (server/client subcommands)
 internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         and one file per protocol (tcp, udp, tls, quic,
-                        h3, kcp, shadowsocks, gre, ipip, sit, icmp, icmpv6,
-                        wireguard, amnezia, amnezia2, tap, http, https, ws,
-                        wss, anytls, naive, smtp)
+                        h3, kcp, shadowsocks, gre, ipip, sit, 6to4, icmp,
+                        icmpv6, wireguard, amnezia, amnezia2, tap, http,
+                        https, ws, wss, anytls, naive, smtp)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)
 internal/report/        result model, terminal table, JSON serialization
 internal/server/        server orchestration: listeners, echo loops, manifest

@@ -15,6 +15,7 @@ func (ipipProto) Overhead() int   { return 42 } // 20 outer IP + 20 inner IP + 2
 func (ipipProto) NeedsRoot() bool { return true }
 
 var ipipCfg = rawConfig{
+	name:     "ipip",
 	protoNum: ipProtoIPIP,
 	encapsulate: func(serverSide bool, self, peer net.IP, id uint16, frame []byte) []byte {
 		return craftInnerIPv4(self, peer, id, frame)

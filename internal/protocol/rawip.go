@@ -121,10 +121,9 @@ func stripInnerIPv4(b []byte) (uint16, []byte, error) {
 	return binary.BigEndian.Uint16(b[20:22]), b[22:], nil
 }
 
-// craftInnerIPv6 builds a synthetic inner IPv6 packet (used by 6in4) carrying
-// the tunnel id and test frame. The addresses are RFC 4193 ULA addresses
-// reserved for the harness.
-func craftInnerIPv6(id uint16, frame []byte) []byte {
+// craftInnerIPv6Addr builds a synthetic inner IPv6 packet with explicit
+// source/destination addresses, carrying the tunnel id and test frame.
+func craftInnerIPv6Addr(src, dst net.IP, id uint16, frame []byte) []byte {
 	payload := make([]byte, 2+len(frame))
 	binary.BigEndian.PutUint16(payload[:2], id)
 	copy(payload[2:], frame)
@@ -133,10 +132,40 @@ func craftInnerIPv6(id uint16, frame []byte) []byte {
 	binary.BigEndian.PutUint16(b[4:6], uint16(len(payload)))
 	b[6] = 59 // next header: no next header
 	b[7] = 64 // hop limit
-	copy(b[8:24], net.ParseIP("fd00::1").To16())
-	copy(b[24:40], net.ParseIP("fd00::2").To16())
+	copy(b[8:24], src.To16())
+	copy(b[24:40], dst.To16())
 	copy(b[40:], payload)
 	return b
+}
+
+// craftInnerIPv6 builds a synthetic inner IPv6 packet (used by 6in4) carrying
+// the tunnel id and test frame. The addresses are RFC 4193 ULA addresses
+// reserved for the harness.
+func craftInnerIPv6(id uint16, frame []byte) []byte {
+	return craftInnerIPv6Addr(net.ParseIP("fd00::1"), net.ParseIP("fd00::2"), id, frame)
+}
+
+// sixToFourAddr maps an IPv4 address to its RFC 3056 6to4 address
+// (2002:V4ADDR::/48): the well-known 2002::/16 prefix followed by the
+// IPv4 address split into two 16-bit groups. E.g. 127.0.0.1 → 2002:7f00:1::.
+func sixToFourAddr(v4 net.IP) net.IP {
+	v4 = v4.To4()
+	if v4 == nil {
+		return nil
+	}
+	b := make(net.IP, 16)
+	binary.BigEndian.PutUint16(b[0:2], 0x2002)
+	binary.BigEndian.PutUint16(b[2:4], binary.BigEndian.Uint16(v4[0:2]))
+	binary.BigEndian.PutUint16(b[4:6], binary.BigEndian.Uint16(v4[2:4]))
+	return b
+}
+
+// craftInnerIPv6To4 builds the inner IPv6 packet for the 6to4 (RFC 3056)
+// protocol: the inner source and destination are the 2002::/48 addresses
+// derived from the tunnel endpoints' IPv4 addresses, the classic
+// automatic-6to4 addressing scheme.
+func craftInnerIPv6To4(self, peer net.IP, id uint16, frame []byte) []byte {
+	return craftInnerIPv6Addr(sixToFourAddr(self), sixToFourAddr(peer), id, frame)
 }
 
 // stripInnerIPv6 extracts the tunnel id and test frame from a synthetic
@@ -173,6 +202,8 @@ func stripGRE(b []byte) ([]byte, error) {
 
 // rawConfig describes how one layer-3 protocol wraps a test frame.
 type rawConfig struct {
+	// name is the protocol name, used in session labels.
+	name     string
 	protoNum int
 	// encapsulate builds the raw payload (after the outer IP header) for a
 	// frame travelling from self to peer under tunnel id. serverSide reports
@@ -391,7 +422,7 @@ func (s *rawServer) dispatchLoop() {
 			id:    tid,
 			peer:  src,
 			self:  self,
-			label: fmt.Sprintf("%s@%s<->%s", rawName(s.cfg.protoNum), src, self),
+			label: fmt.Sprintf("%s@%s<->%s", s.cfg.name, src, self),
 		}
 		s.mu.Lock()
 		s.sessions[key] = t
@@ -425,18 +456,6 @@ func (s *rawServer) Close() error {
 		_ = s.rs.pc.Close()
 	})
 	return nil
-}
-
-func rawName(protoNum int) string {
-	switch protoNum {
-	case ipProtoGRE:
-		return "gre"
-	case ipProtoIPIP:
-		return "ipip"
-	case ipProtoSIT:
-		return "sit"
-	}
-	return "raw"
 }
 
 // resolveIPv4 resolves a host to an IPv4 address (falling back to the first
