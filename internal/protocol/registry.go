@@ -36,6 +36,7 @@ const (
 	PortVXLAN                  // +29: VXLAN (UDP)
 	PortVXLANGpe               // +30: VXLAN-GPE (UDP)
 	PortGUE                    // +31: GUE (UDP)
+	PortIPsec                  // +32: IPsec ESP over UDP (NAT-T)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -69,6 +70,7 @@ func All() []Protocol {
 		vxlanProto{},
 		vxlanGpeProto{},
 		gueProto{},
+		ipsecProto{},
 	}
 }
 
@@ -132,6 +134,8 @@ func PortOffset(p Protocol) int {
 		return PortVXLANGpe
 	case "gue":
 		return PortGUE
+	case "ipsec":
+		return PortIPsec
 	}
 	return -1
 }

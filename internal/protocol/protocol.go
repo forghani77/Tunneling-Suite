@@ -48,8 +48,8 @@ const defaultPassword = "tunnel-suit"
 type Options struct {
 	// SSPassword is the Shadowsocks AEAD password. Empty means the default.
 	SSPassword string
-	// Password is the shared secret for anytls and the naive Basic-auth
-	// password. Empty means defaultPassword.
+	// Password is the shared secret for anytls, naive, and the ipsec
+	// static SA. Empty means defaultPassword.
 	Password string
 	// TLSCertFile/TLSKeyFile optionally point at a server certificate pair.
 	// When empty the server generates an ephemeral self-signed certificate.

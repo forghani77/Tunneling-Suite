@@ -28,6 +28,7 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `vxlan`      | datagram  | VXLAN (RFC 7348) over UDP (8-byte header + VNI)   | no            |
 | `vxlan-gpe`  | datagram  | VXLAN-GPE over UDP (8-byte header + next protocol) | no            |
 | `gue`        | datagram  | GUE over UDP (extensible header + 16-bit proto/ctype) | no            |
+| `ipsec`      | datagram  | IPsec ESP-AES-GCM over UDP (RFC 3948/4106/4303)     | no            |
 | `icmp`       | datagram  | ICMP echo (RFC 792) via raw sockets, IP protocol 1 | **yes**       |
 | `icmpv6`     | datagram  | ICMPv6 (RFC 4443) via raw sockets, IP protocol 58  | **yes**       |
 | `wireguard`  | datagram  | kernel WireGuard interface (`ip` + `wg` tools)     | **yes**       |
@@ -85,6 +86,15 @@ Notes:
   does the harness. A 32-bit VNI rides in one extension word flagged by
   the first (most significant) flag bit, per the GUE extension drafts.
   Runs without root.
+- `ipsec` is the only **encrypted and integrity-protected** tunnel in the
+  harness: genuine ESP packets (RFC 4303) with the AES-GCM transform
+  (RFC 4106) — SPI, sequence number, 8-byte IV, and a GCM tag as the ICV —
+  wrapped in UDP per the NAT-Traversal scheme (RFC 3948) with the 4-byte
+  non-IKE marker. Both ends share one static SA: the AES-128 key and GCM
+  salt are derived from `--password` (default `tunnel-suit`), so both sides
+  authenticate each other's traffic, and a wrong or missing password fails
+  the handshake. No IKE is performed; the UDP encapsulation avoids raw
+  sockets and the kernel's XFRM stack. Runs without root.
 - `icmp` looks like ordinary ping traffic: the client sends ICMP echo
   requests (type 8) carrying the test frames, and the server answers with
   echo replies (type 0) over a raw `ip4:1` socket. The kernel auto-answers
@@ -236,6 +246,7 @@ tunnel-suit client [flags]
 | +29       | vxlan (UDP)                            |
 | +30       | vxlan-gpe (UDP)                        |
 | +31       | gue (UDP)                              |
+| +32       | ipsec (UDP, ESP NAT-T)                  |
 
 ## How a test works
 
@@ -323,8 +334,8 @@ cmd/tunnel-suit/        CLI entry point (server/client subcommands)
 internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         and one file per protocol (tcp, udp, tls, quic,
                         h3, kcp, shadowsocks, gre, ipip, sit, 6to4, geneve,
-                        vxlan, vxlan-gpe, gue, icmp, icmpv6, wireguard,
-                        amnezia, amnezia2, tap,
+                        vxlan, vxlan-gpe, gue, ipsec, icmp, icmpv6,
+                        wireguard, amnezia, amnezia2, tap,
                         http, https, ws, wss, anytls, naive, smtp)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)
 internal/report/        result model, terminal table, JSON serialization
