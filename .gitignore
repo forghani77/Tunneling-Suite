@@ -14,5 +14,3 @@ __pycache__/
 *.key
 *.pem
 
-# smtp-tunnel-proxy runtime
-smtp-tunnel-proxy/server.log

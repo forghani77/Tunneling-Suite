@@ -88,15 +88,15 @@ Notes:
   and length-prefixed junk chunks on the first 8 chunks of each direction),
   modeled directly on the reference `caddy/forwardproxy` (naive branch)
   server. No external binaries needed.
-- `smtp` is a **Go port of the smtp-tunnel-proxy** protocol (the Python
-  implementation in `smtp-tunnel-proxy/`): the handshake mimics a real
-  Postfix submission server (`220 ... ESMTP Postfix`, EHLO capabilities,
-  STARTTLS, `AUTH PLAIN` with an HMAC-SHA256 timestamped token, then a
-  `BINARY` upgrade), after which the connection becomes a raw byte stream.
-  It is wire-compatible: the Python client can authenticate against the Go
-  server and vice versa (username `tunnel`, secret = `--password`). The
-  harness only exercises the echo path, not the Python side's multiplexed
-  proxying frames.
+- `smtp` is a **Go port of the smtp-tunnel-proxy** protocol: the handshake
+  mimics a real Postfix submission server (`220 ... ESMTP Postfix`, EHLO
+  capabilities, STARTTLS, `AUTH PLAIN` with an HMAC-SHA256 timestamped
+  token, then a `BINARY` upgrade), after which the connection becomes a raw
+  byte stream. It is wire-compatible with the reference Python
+  implementation (username `tunnel`, secret = `--password`): a Python
+  smtp-tunnel-proxy client can authenticate against the Go server and vice
+  versa. The harness only exercises the echo path, not the multiplexed
+  CONNECT/DATA/CLOSE proxying frames.
 - If a protocol can't start (no privileges, no module), the server reports it
   unavailable and the client marks it **skipped** with the reason.
 - `bip`, `h3`, `ss`, `wg`, `awg`/`amneziawg`, `awg2`, `l2tap`/`l2`,

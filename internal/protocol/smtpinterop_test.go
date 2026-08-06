@@ -7,8 +7,9 @@ import (
 	"time"
 )
 
-// Temporary: verifies the Go smtp client handshake against the real Python
-// smtp-tunnel-proxy server (set SMTP_PY_ADDR to host:port).
+// Verifies the Go smtp client handshake against an externally deployed
+// smtp-tunnel-proxy Python server (set SMTP_PY_ADDR to host:port). The
+// Python reference implementation is not part of this repository.
 func TestSmtpInteropPythonServer(t *testing.T) {
 	addr := os.Getenv("SMTP_PY_ADDR")
 	if addr == "" {
