@@ -33,6 +33,7 @@ const (
 	PortICMP                   // +26: raw IPv4 socket (port is bookkeeping only)
 	PortSixToFour              // +27: raw IPv4 socket (port is bookkeeping only)
 	PortGeneve                 // +28: GENEVE (UDP)
+	PortVXLAN                  // +29: VXLAN (UDP)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -63,6 +64,7 @@ func All() []Protocol {
 		icmpProto{},
 		sixToFourProto{},
 		geneveProto{},
+		vxlanProto{},
 	}
 }
 
@@ -120,6 +122,8 @@ func PortOffset(p Protocol) int {
 		return PortSixToFour
 	case "geneve":
 		return PortGeneve
+	case "vxlan":
+		return PortVXLAN
 	}
 	return -1
 }

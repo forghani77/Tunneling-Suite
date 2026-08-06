@@ -25,6 +25,7 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `sit`        | datagram  | 6in4 (RFC 4213) via raw sockets, IP protocol 41    | **yes**       |
 | `6to4`       | datagram  | 6to4 (RFC 3056) via raw sockets, IP protocol 41   | **yes**       |
 | `geneve`     | datagram  | GENEVE (RFC 8926) over UDP (8-byte header + VNI)  | no            |
+| `vxlan`      | datagram  | VXLAN (RFC 7348) over UDP (8-byte header + VNI)   | no            |
 | `icmp`       | datagram  | ICMP echo (RFC 792) via raw sockets, IP protocol 1 | **yes**       |
 | `icmpv6`     | datagram  | ICMPv6 (RFC 4443) via raw sockets, IP protocol 58  | **yes**       |
 | `wireguard`  | datagram  | kernel WireGuard interface (`ip` + `wg` tools)     | **yes**       |
@@ -59,6 +60,12 @@ Notes:
   datagram carries the 8-byte fixed GENEVE header (version/option length,
   protocol type `0x0800`, and a 24-bit VNI stamped per tunnel), and the test
   frame rides as the inner payload. Runs without root.
+- `vxlan` carries the test frames in VXLAN (RFC 7348) encapsulation over
+  UDP. VXLAN's IANA-assigned port is 4789; the harness uses its own
+  base+offset port layout so one server can host every protocol. Every
+  datagram carries the 8-byte VXLAN header (flags with the I bit set, a
+  24-bit VNI stamped per tunnel), and the test frame rides in place of the
+  inner Ethernet frame. Runs without root.
 - `icmp` looks like ordinary ping traffic: the client sends ICMP echo
   requests (type 8) carrying the test frames, and the server answers with
   echo replies (type 0) over a raw `ip4:1` socket. The kernel auto-answers
@@ -207,6 +214,7 @@ tunnel-suit client [flags]
 | +26       | icmp (raw socket; port is bookkeeping) |
 | +27       | 6to4 (raw socket; port is bookkeeping)  |
 | +28       | geneve (UDP)                            |
+| +29       | vxlan (UDP)                            |
 
 ## How a test works
 
@@ -294,7 +302,8 @@ cmd/tunnel-suit/        CLI entry point (server/client subcommands)
 internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         and one file per protocol (tcp, udp, tls, quic,
                         h3, kcp, shadowsocks, gre, ipip, sit, 6to4, geneve,
-                        icmp, icmpv6, wireguard, amnezia, amnezia2, tap,
+                        vxlan, icmp, icmpv6, wireguard, amnezia, amnezia2,
+                        tap,
                         http, https, ws, wss, anytls, naive, smtp)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)
 internal/report/        result model, terminal table, JSON serialization
