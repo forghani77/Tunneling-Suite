@@ -31,6 +31,7 @@ Usage:
 
 Protocols tested: tcp, udp, tls, quic, http3 (QUIC), kcp, shadowsocks,
                   gre, ipip, sit, 6to4, icmp, icmpv6 (layer-3, needs root),
+                  geneve (UDP, RFC 8926),
                   wireguard, amnezia, amnezia2, tap (layer-2, needs root),
                   http, https, ws, wss, anytls, naive, smtp
 

@@ -32,6 +32,7 @@ const (
 	PortSMTP                   // +25: SMTP tunnel
 	PortICMP                   // +26: raw IPv4 socket (port is bookkeeping only)
 	PortSixToFour              // +27: raw IPv4 socket (port is bookkeeping only)
+	PortGeneve                 // +28: GENEVE (UDP)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -61,6 +62,7 @@ func All() []Protocol {
 		smtpProto{},
 		icmpProto{},
 		sixToFourProto{},
+		geneveProto{},
 	}
 }
 
@@ -116,6 +118,8 @@ func PortOffset(p Protocol) int {
 		return PortICMP
 	case "6to4":
 		return PortSixToFour
+	case "geneve":
+		return PortGeneve
 	}
 	return -1
 }
