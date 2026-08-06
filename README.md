@@ -29,6 +29,7 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `vxlan-gpe`  | datagram  | VXLAN-GPE over UDP (8-byte header + next protocol) | no            |
 | `gue`        | datagram  | GUE over UDP (extensible header + 16-bit proto/ctype) | no            |
 | `ipsec`      | datagram  | IPsec ESP-AES-GCM over UDP (RFC 3948/4106/4303)     | no            |
+| `l2tp`       | datagram  | L2TPv3 data messages over UDP (RFC 3931)             | no            |
 | `icmp`       | datagram  | ICMP echo (RFC 792) via raw sockets, IP protocol 1 | **yes**       |
 | `icmpv6`     | datagram  | ICMPv6 (RFC 4443) via raw sockets, IP protocol 58  | **yes**       |
 | `wireguard`  | datagram  | kernel WireGuard interface (`ip` + `wg` tools)     | **yes**       |
@@ -95,6 +96,15 @@ Notes:
   authenticate each other's traffic, and a wrong or missing password fails
   the handshake. No IKE is performed; the UDP encapsulation avoids raw
   sockets and the kernel's XFRM stack. Runs without root.
+- `l2tp` carries the test frames in L2TPv3 (RFC 3931) data messages over
+  UDP (port 1701): the session header `[flags 16b = T clear, Ver 3][reserved
+  16b][Session ID 32b][Cookie 32b]`, with the cookie checked on receipt
+  exactly as the RFC requires. The harness implements the data plane only —
+  no control connection — so the Session ID and Cookie that real L2TPv3
+  exchanges via SCCRQ/ICRQ are derived from `--password`, meaning a wrong
+  password fails the session association. The test frame stands in for the
+  tunneled L2 frame (the pseudowire payload). L2TPv3's direct-over-IP mode
+  (protocol 115) would need raw sockets; the UDP variant runs without root.
 - `icmp` looks like ordinary ping traffic: the client sends ICMP echo
   requests (type 8) carrying the test frames, and the server answers with
   echo replies (type 0) over a raw `ip4:1` socket. The kernel auto-answers
@@ -247,6 +257,7 @@ tunnel-suit client [flags]
 | +30       | vxlan-gpe (UDP)                        |
 | +31       | gue (UDP)                              |
 | +32       | ipsec (UDP, ESP NAT-T)                  |
+| +33       | l2tp (UDP, L2TPv3 data messages)         |
 
 ## How a test works
 
@@ -334,7 +345,7 @@ cmd/tunnel-suit/        CLI entry point (server/client subcommands)
 internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         and one file per protocol (tcp, udp, tls, quic,
                         h3, kcp, shadowsocks, gre, ipip, sit, 6to4, geneve,
-                        vxlan, vxlan-gpe, gue, ipsec, icmp, icmpv6,
+                        vxlan, vxlan-gpe, gue, ipsec, l2tp, icmp, icmpv6,
                         wireguard, amnezia, amnezia2, tap,
                         http, https, ws, wss, anytls, naive, smtp)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)

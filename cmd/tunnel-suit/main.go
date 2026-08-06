@@ -34,6 +34,7 @@ Protocols tested: tcp, udp, tls, quic, http3 (QUIC), kcp, shadowsocks,
                   geneve (UDP, RFC 8926), vxlan (UDP, RFC 7348),
                   vxlan-gpe (UDP, next-protocol field), gue (UDP, generic
                   encapsulation), ipsec (ESP-AES-GCM over UDP, NAT-T),
+                  l2tp (L2TPv3 data messages over UDP, RFC 3931),
                   wireguard, amnezia, amnezia2, tap (layer-2, needs root),
                   http, https, ws, wss, anytls, naive, smtp
 
@@ -82,7 +83,7 @@ func runServer(args []string) int {
 	cert := fs.String("cert", "", "TLS certificate file (default: ephemeral self-signed)")
 	key := fs.String("key", "", "TLS key file")
 	ssPass := fs.String("ss-password", "", "Shadowsocks password (must match client)")
-	password := fs.String("password", "", "shared secret for anytls/naive/ipsec (must match client)")
+	password := fs.String("password", "", "shared secret for anytls/naive/ipsec/l2tp (must match client)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "tunnel-suit server — listen for tunneling tests\n\n")
 		fs.PrintDefaults()
@@ -118,7 +119,7 @@ func runClient(args []string) int {
 	jsonOut := fs.String("json", "", "JSON report path (default: report-<timestamp>.json)")
 	noColor := fs.Bool("no-color", false, "disable ANSI colors")
 	ssPass := fs.String("ss-password", "", "Shadowsocks password (must match server)")
-	password := fs.String("password", "", "shared secret for anytls/naive/ipsec (must match server)")
+	password := fs.String("password", "", "shared secret for anytls/naive/ipsec/l2tp (must match server)")
 	throughput := fs.String("throughput", "", "comma-separated protocols to run a throughput speed test against (default: none)")
 	throughputOnly := fs.Bool("throughput-only", false, "run only the throughput speed tests (skip the standard benchmark)")
 	throughputSec := fs.Float64("throughput-time", 5, "throughput test duration (s)")

@@ -37,6 +37,7 @@ const (
 	PortVXLANGpe               // +30: VXLAN-GPE (UDP)
 	PortGUE                    // +31: GUE (UDP)
 	PortIPsec                  // +32: IPsec ESP over UDP (NAT-T)
+	PortL2TP                   // +33: L2TPv3 (UDP)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -71,6 +72,7 @@ func All() []Protocol {
 		vxlanGpeProto{},
 		gueProto{},
 		ipsecProto{},
+		l2tpProto{},
 	}
 }
 
@@ -136,6 +138,8 @@ func PortOffset(p Protocol) int {
 		return PortGUE
 	case "ipsec":
 		return PortIPsec
+	case "l2tp":
+		return PortL2TP
 	}
 	return -1
 }
@@ -201,6 +205,8 @@ var NameAliases = map[string]string{
 	"vxlangpe":    "vxlan-gpe",
 	"vxgpe":       "vxlan-gpe",
 	"gpe":         "vxlan-gpe",
+	"l2tpv3":      "l2tp",
+	"l2tp-v3":     "l2tp",
 }
 
 // NormalizeName canonicalizes a user-supplied protocol name.
