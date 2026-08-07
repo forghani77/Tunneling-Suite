@@ -210,3 +210,115 @@ func TestRawServerSessionReuse(t *testing.T) {
 		})
 	}
 }
+
+// TestRawServerForwardDial tests that the raw layer-3 dispatchers accept a
+// FrameForwardDial as a session opener and route subsequent FrameForwardData
+// frames to the established session. Before the fix isClientProbe only
+// admitted FramePing, so forward sessions over raw protocols never got past
+// the first frame (and its data frames would have been dropped too).
+func TestRawServerForwardDial(t *testing.T) {
+	skipNoRawIP(t)
+	for _, p := range rawProtocols {
+		p := p
+		t.Run(p.Name(), func(t *testing.T) {
+			srv, err := p.Listen("0.0.0.0:0", Options{})
+			if err != nil {
+				t.Skipf("listen: %v", err)
+			}
+			defer srv.Close()
+			is, ok := srv.(*rawServer)
+			if !ok {
+				t.Fatalf("unexpected server type %T", srv)
+			}
+			accepted := make(chan Tunnel, 1)
+			go func() {
+				for {
+					tun, err := srv.Accept()
+					if err != nil {
+						return
+					}
+					select {
+					case accepted <- tun:
+					default:
+					}
+				}
+			}()
+
+			const cliID = 0x5151
+			cfg := rawCfgFor(p)
+			key := sessKey{peer: net.IPv4(127, 0, 0, 1).String(), id: cliID}
+			rs, err := listenRawIP(cfg.protoNum)
+			if err != nil {
+				t.Fatalf("client socket: %v", err)
+			}
+			cli := &rawTunnel{
+				cfg:   cfg,
+				rs:    rs,
+				id:    cliID,
+				peer:  net.IPv4(127, 0, 0, 1),
+				self:  net.IPv4(127, 0, 0, 1),
+				label: "test-client",
+			}
+			defer cli.Close()
+
+			// Open a forward session: the first frame is a ForwardDial.
+			dial := append([]byte{FrameForwardDial}, []byte("example.com:80")...)
+			if err := cli.WriteFrame(dial); err != nil {
+				t.Fatalf("write dial: %v", err)
+			}
+			var tun Tunnel
+			select {
+			case tun = <-accepted:
+			case <-time.After(3 * time.Second):
+				t.Fatal("server did not accept a ForwardDial session")
+			}
+			defer tun.Close()
+
+			// The dispatcher hands the tunnel over with the dial frame already
+			// queued — the server's forward.Serve reads it, then relays the
+			// rest. Consume it exactly like the real server does.
+			gotDial, err := readFrame(tun, 3*time.Second)
+			if err != nil {
+				t.Fatalf("read dial frame: %v", err)
+			}
+			if string(gotDial) != string(dial) {
+				t.Fatalf("dial frame = %q, want %q", gotDial, dial)
+			}
+
+			// Data frames for the established session must arrive on the
+			// tunnel — this is the half that used to be dropped.
+			data := append([]byte{FrameForwardData}, []byte("payload")...)
+			if err := cli.WriteFrame(data); err != nil {
+				t.Fatalf("write data: %v", err)
+			}
+			got, err := readFrame(tun, 3*time.Second)
+			if err != nil {
+				t.Fatalf("read data frame: %v", err)
+			}
+			if string(got) != string(data) {
+				t.Fatalf("data frame = %q, want %q", got, data)
+			}
+			if n := sessionsFor(is, key); n != 1 {
+				t.Fatalf("server holds %d sessions for one forward session (expected 1)", n)
+			}
+		})
+	}
+}
+
+// sessionsFor reports whether the server has an active session for key.
+func sessionsFor(s *rawServer, key sessKey) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.sessions[key]; ok {
+		return 1
+	}
+	return 0
+}
+
+// readFrame reads one frame from a tunnel with a deadline.
+func readFrame(tun Tunnel, d time.Duration) ([]byte, error) {
+	_ = tun.SetReadDeadline(time.Now().Add(d))
+	f, err := tun.ReadFrame()
+	_ = tun.SetReadDeadline(time.Time{})
+	return f, err
+}

@@ -310,13 +310,16 @@ func (s *icmp6Server) removeSession(t *icmp6Tunnel) {
 }
 
 // isClientProbe reports whether a decapsulated frame is a client-originated
-// probe. Client probes are always Pings (the server re-marks them Pong when
-// echoing), so any other frame — in particular Pongs echoed by OTHER harness
-// servers, which every raw socket on the host also receives — is never
-// treated as a client session. Without this, two servers on one host echo
-// each other's echoes forever.
+// probe that can OPEN a new session: either a benchmark Ping (the server
+// re-marks it Pong when echoing) or a ForwardDial that starts a forwarding
+// tunnel. Any other frame — in particular Pongs echoed by OTHER harness
+// servers, which every raw socket on the host also receives — is never treated
+// as a new client session. Without this, two servers on one host echo each
+// other's echoes forever. Once a session exists, every frame from that peer is
+// routed to it (forward data frames are not probes but still belong to the
+// session).
 func isClientProbe(frame []byte) bool {
-	return len(frame) > 0 && frame[0] == FramePing
+	return len(frame) > 0 && (frame[0] == FramePing || frame[0] == FrameForwardDial)
 }
 
 // dispatchLoop is the server's single socket reader.
@@ -327,9 +330,9 @@ func (s *icmp6Server) dispatchLoop() {
 			return // socket closed
 		}
 		id, frame, err := icmp6Decap(payload)
-		if err != nil || s.known(id) || !isClientProbe(frame) {
-			// Foreign ICMPv6 (NDP, pings, ...), one of our own echoes looped
-			// back by the kernel, or another server's echo: keep waiting.
+		if err != nil || s.known(id) {
+			// Foreign ICMPv6 (NDP, pings, ...) or one of our own echoes
+			// looped back by the kernel: keep waiting.
 			continue
 		}
 		// The socket read buffer is reused, so the frame aliases it; copy it
@@ -344,17 +347,23 @@ func (s *icmp6Server) dispatchLoop() {
 		t := s.sessions[key]
 		s.mu.Unlock()
 		if t != nil {
-			// Repeat probe from a known client: reuse its tunnel. The send is
-			// non-blocking: a full session buffer must never stall the
-			// dispatcher, the socket's only reader (a dropped probe is just
-			// loss, the same as any datagram drop).
+			// Known session: route every frame from this peer — benchmark
+			// pings AND forward data frames alike. The send is non-blocking:
+			// a full session buffer must never stall the dispatcher, the
+			// socket's only reader (a dropped frame is just loss, the same as
+			// any datagram drop).
 			select {
 			case t.in <- frame:
 			default:
 			}
 			continue
 		}
-		// Brand-new client session.
+		// Brand-new client session: only a genuine client probe opens one
+		// (a Ping benchmark probe or a ForwardDial that starts a forwarding
+		// tunnel). Pongs echoed by other harness servers never qualify.
+		if !isClientProbe(frame) {
+			continue
+		}
 		var tid uint16
 		for {
 			tid = uint16(rand.Intn(1 << 16))

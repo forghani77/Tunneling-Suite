@@ -386,10 +386,11 @@ func (s *rawServer) dispatchLoop() {
 			return // socket closed
 		}
 		id, frame, err := s.cfg.deencapsulate(payload)
-		if err != nil || s.known(id) || !isClientProbe(frame) || (s.cfg.clientOK != nil && !s.cfg.clientOK(payload)) {
+		if err != nil || s.known(id) || (s.cfg.clientOK != nil && !s.cfg.clientOK(payload)) {
 			// Foreign traffic for this protocol number, one of our own echoes
-			// looped back by the kernel, another server's echo, or a message
-			// type a client would never send: keep waiting.
+			// looped back by the kernel, or a message type a client would
+			// never send (e.g. an ICMP echo reply auto-answered by the
+			// kernel): keep waiting.
 			continue
 		}
 		// The socket read buffer is reused, so the frame aliases it; copy it
@@ -404,17 +405,24 @@ func (s *rawServer) dispatchLoop() {
 		t := s.sessions[key]
 		s.mu.Unlock()
 		if t != nil {
-			// Repeat probe from a known client: reuse its tunnel. The send is
-			// non-blocking: a full session buffer must never stall the
-			// dispatcher, the socket's only reader (a dropped probe is just
-			// loss, the same as any datagram drop).
+			// Known session: route every frame from this peer — benchmark
+			// pings AND forward data frames alike. The send is non-blocking:
+			// a full session buffer must never stall the dispatcher, the
+			// socket's only reader (a dropped frame is just loss, the same as
+			// any datagram drop).
 			select {
 			case t.in <- frame:
 			default:
 			}
 			continue
 		}
-		// Brand-new client session.
+		// Brand-new client session: only a genuine client probe opens one
+		// (a Ping benchmark probe or a ForwardDial that starts a forwarding
+		// tunnel). Pongs echoed by other harness servers on the same host, or
+		// a message type a client would never send, never qualify.
+		if !isClientProbe(frame) || (s.cfg.clientOK != nil && !s.cfg.clientOK(payload)) {
+			continue
+		}
 		var tid uint16
 		for {
 			tid = uint16(rand.Intn(1 << 16))
