@@ -284,11 +284,6 @@ After that, `tunnel-suite <TAB>` completes the subcommands, and flag values
 tab-complete protocol names (`--protocols=<TAB>`, `--throughput=<TAB>`,
 `--throughput-only=<TAB>`).
 
-The bash script is self-contained: it embeds the small `_get_comp_words_by_ref`
-/ `_filedir` helpers it needs, so it keeps working even when the
-`bash-completion` package is not installed (the script prefers the real
-package when it is loaded).
-
 ### Forwarding mode
 
 Besides benchmarking, `tunnel-suite` can carry real TCP traffic through any

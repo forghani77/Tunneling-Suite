@@ -72,32 +72,6 @@ func TestRewriteCompletionFlags(t *testing.T) {
 	}
 }
 
-// TestBashCompletionHasFallbacks verifies the generated bash script is
-// self-contained: cobra's script calls _get_comp_words_by_ref and _filedir
-// from the external bash-completion package unconditionally, so on systems
-// without that package completion fails with "command not found". The fallback
-// definitions are injected right after the header, guarded so the real package
-// still wins when present.
-func TestBashCompletionHasFallbacks(t *testing.T) {
-	var buf bytes.Buffer
-	if err := genCompletionScript(rootCmd, "bash", &buf); err != nil {
-		t.Fatalf("genCompletionScript(bash) error = %v", err)
-	}
-	out := buf.String()
-	// The fallback block must be present, guarded, and placed before any use.
-	if !strings.Contains(out, "if ! declare -F _get_comp_words_by_ref >/dev/null 2>&1; then") {
-		t.Error("bash script missing guarded _get_comp_words_by_ref fallback")
-	}
-	if !strings.Contains(out, "if ! declare -F _filedir >/dev/null 2>&1; then") {
-		t.Error("bash script missing guarded _filedir fallback")
-	}
-	fallbackPos := strings.Index(out, "if ! declare -F _get_comp_words_by_ref")
-	usePos := strings.Index(out, `_get_comp_words_by_ref "$@" cur prev words cword`)
-	if fallbackPos < 0 || usePos < 0 || fallbackPos > usePos {
-		t.Errorf("fallback must be defined before its use (fallback %d, use %d)", fallbackPos, usePos)
-	}
-}
-
 // TestRunCompletion exercises the full completion path the way main() runs it:
 // argv normalized (single-dash token → --form so cobra's flag completion
 // matches), then execute the hidden __complete command with stdout captured,
