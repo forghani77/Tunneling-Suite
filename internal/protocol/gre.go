@@ -10,11 +10,11 @@ import (
 // the test frames stay valid IP payloads on the wire.
 type greProto struct{}
 
-func (greProto) Name() string           { return "gre" }
-func (greProto) Kind() Kind             { return KindDatagram }
-func (greProto) Overhead() int          { return 46 } // 20 outer IP + 4 GRE + 20 inner IPv4 + 2 tunnel id
-func (greProto) NeedsRoot() bool        { return true }
-func (greProto) IsRawDatagram() bool    { return true }
+func (greProto) Name() string        { return "gre" }
+func (greProto) Kind() Kind          { return KindDatagram }
+func (greProto) Overhead() int       { return 46 } // 20 outer IP + 4 GRE + 20 inner IPv4 + 2 tunnel id
+func (greProto) NeedsRoot() bool     { return true }
+func (greProto) IsRawDatagram() bool { return true }
 
 var greCfg = rawConfig{
 	name:     "gre",

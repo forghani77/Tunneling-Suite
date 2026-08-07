@@ -147,6 +147,14 @@ const (
 	FramePing byte = 1
 	// FramePong is the server's echo of a FramePing.
 	FramePong byte = 2
+	// FrameForwardDial is the first frame of a forwarding session: its payload
+	// is the dial target "host:port" the server should connect to. It is sent
+	// by a forwarding client (tunnel-suite client --mode forward|socks) and
+	// only acted on by a server started with --forward; otherwise it is
+	// treated like any other non-ping frame.
+	FrameForwardDial byte = 3
+	// FrameForwardData carries relayed bytes in a forwarding session.
+	FrameForwardData byte = 4
 
 	frameHeaderLen = 13
 	// MaxFrame bounds frame sizes; the stream length prefix is a uint16.
@@ -206,7 +214,9 @@ const socketBufSize = 4 << 20 // 4 MiB
 // drop whole datagrams during a throughput blast. Sockets that do not expose
 // a raw file descriptor (library-backed conns) are left alone.
 func tuneSocket(c any) {
-	sc, ok := c.(interface{ SyscallConn() (syscall.RawConn, error) })
+	sc, ok := c.(interface {
+		SyscallConn() (syscall.RawConn, error)
+	})
 	if !ok {
 		return
 	}

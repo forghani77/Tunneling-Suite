@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"tunnel-suite/internal/forward"
 	"tunnel-suite/internal/protocol"
 )
 
@@ -25,6 +26,12 @@ type Config struct {
 	TLSKeyFile  string
 	SSPassword  string
 	Password    string // shared secret for anytls / naive
+	// Forward enables relay sessions: a client sending a FrameForwardDial is
+	// dialed out to the requested target and its bytes relayed (the data
+	// plane used by "tunnel-suite client --mode forward|socks"). Without it
+	// every session is echo-only and the server can never be used as an open
+	// relay. Benchmark sessions always keep working either way.
+	Forward bool
 }
 
 type entry struct {
@@ -66,7 +73,7 @@ func Run(cfg Config) error {
 		log.Printf("protocol %-12s listening on %s", p.Name(), addr)
 		entries[p.Name()] = &entry{Proto: p, Server: ps, Available: true}
 		names = append(names, p.Name())
-		go acceptLoop(ps)
+		go acceptLoop(ps, p, cfg.Forward)
 	}
 
 	// Control/manifest listener.
@@ -107,13 +114,17 @@ func Run(cfg Config) error {
 	return nil
 }
 
-func acceptLoop(ps protocol.ProtoServer) {
+func acceptLoop(ps protocol.ProtoServer, p protocol.Protocol, enableForward bool) {
 	for {
 		t, err := ps.Accept()
 		if err != nil {
 			return
 		}
-		go protocol.EchoLoop(t)
+		if enableForward {
+			go forward.Serve(t, p.Kind())
+		} else {
+			go protocol.EchoLoop(t)
+		}
 	}
 }
 
@@ -148,7 +159,7 @@ func handleControl(c net.Conn, cfg Config, entries map[string]*entry, names []st
 	_ = json.NewEncoder(c).Encode(map[string]any{"entries": out})
 }
 
-// selectProtocols resolves the requested protocol names against the registry.
+// selectProtocols resolves requested protocol names against the registry.
 func selectProtocols(requested []string) ([]protocol.Protocol, error) {
 	all := protocol.All()
 	if len(requested) == 0 {
