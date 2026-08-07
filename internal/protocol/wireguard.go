@@ -246,7 +246,7 @@ func (s *wgServer) acceptClient(c net.Conn) (Tunnel, error) {
 	}
 	s.prevPeer = peerB64
 
-	echoPort := s.echo.conn.LocalAddr().(*net.UDPAddr).Port
+	echoPort := s.echo.LocalAddr().(*net.UDPAddr).Port
 	info := wgServerInfo{
 		ServerPub:  hex.EncodeToString(s.pub),
 		InternalIP: wgServerIP,

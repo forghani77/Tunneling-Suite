@@ -121,6 +121,52 @@ func TestThroughputClampRawDatagram(t *testing.T) {
 	}
 }
 
+// TestSequentialClientsSameServer guards the UDP server dispatcher against
+// the zombie-session regression: the old per-datagram Accept design left
+// thousands of session goroutines on the server after a throughput blast,
+// and they stole every probe from the next client on the same port —
+// reproduced as "no successful round trips" on the second run. A blast
+// followed by a full benchmark on the same server must both succeed.
+func TestSequentialClientsSameServer(t *testing.T) {
+	const base = 24000
+	opts := protocol.Options{}
+	for _, name := range []string{"udp", "vxlan", "vxlan-gpe"} {
+		p, ok := protocol.ByName(name)
+		if !ok {
+			t.Fatalf("protocol %s not registered", name)
+		}
+		t.Run(name, func(t *testing.T) {
+			addr := protocol.JoinHostPort("127.0.0.1", base+protocol.PortOffset(p))
+			srv, err := p.Listen(addr, opts)
+			if err != nil {
+				t.Skipf("listen: %v", err)
+			}
+			defer srv.Close()
+			go func() {
+				for {
+					tun, err := srv.Accept()
+					if err != nil {
+						return
+					}
+					go protocol.EchoLoop(tun)
+				}
+			}()
+
+			cfg := DefaultConfig()
+			cfg.Pings = 20
+			cfg.ThroughputSec = 1
+			// Run 1: a throughput blast, which is what used to spawn the
+			// zombie sessions. Run 2: a full benchmark on the same server.
+			if res := RunThroughput(p, addr, opts, cfg); res.Status != report.StatusOK {
+				t.Fatalf("throughput: status=%s error=%q", res.Status, res.Error)
+			}
+			if res := Run(p, addr, opts, cfg); res.Status != report.StatusOK {
+				t.Fatalf("benchmark after blast: status=%s error=%q (zombie-session regression?)", res.Status, res.Error)
+			}
+		})
+	}
+}
+
 // TestMain disables the go-shadowsocks2 salt-replay filter: it is a
 // process-global singleton, so with both ends of a test in one process the
 // client's outbound salt is falsely flagged as repeated by the server.

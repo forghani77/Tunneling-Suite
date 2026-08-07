@@ -324,48 +324,6 @@ func (t *datagramTunnel) SetReadDeadline(d time.Time) error { return t.c.SetDead
 func (t *datagramTunnel) Close() error                      { return t.c.Close() }
 func (t *datagramTunnel) Label() string                     { return t.label }
 
-// packetTunnel wraps a PacketConn bound to a fixed peer (server side). Like
-// datagramTunnel, it reuses its read buffer and enlarges the socket buffers
-// on first use.
-type packetTunnel struct {
-	pc       net.PacketConn
-	peer     net.Addr
-	pending  []byte
-	label    string
-	buf      []byte // reused read buffer
-	tuneOnce sync.Once
-}
-
-func (t *packetTunnel) WriteFrame(p []byte) error {
-	t.tuneOnce.Do(func() { tuneSocket(t.pc) })
-	if len(p) > MaxFrame {
-		return ErrFrameTooLarge
-	}
-	_, err := t.pc.WriteTo(p, t.peer)
-	return err
-}
-
-func (t *packetTunnel) ReadFrame() ([]byte, error) {
-	t.tuneOnce.Do(func() { tuneSocket(t.pc) })
-	if len(t.pending) > 0 {
-		b := t.pending
-		t.pending = nil
-		return b, nil
-	}
-	if t.buf == nil {
-		t.buf = make([]byte, MaxFrame)
-	}
-	n, _, err := t.pc.ReadFrom(t.buf)
-	if err != nil {
-		return nil, err
-	}
-	return t.buf[:n], nil
-}
-
-func (t *packetTunnel) SetReadDeadline(d time.Time) error { return t.pc.SetReadDeadline(d) }
-func (t *packetTunnel) Close() error                      { return t.pc.Close() }
-func (t *packetTunnel) Label() string                     { return t.label }
-
 // streamServer adapts a net.Listener (whose Accept already returns wrapped
 // connections, e.g. TLS or KCP) into a ProtoServer.
 type streamServer struct {

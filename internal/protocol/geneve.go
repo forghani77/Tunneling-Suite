@@ -56,8 +56,8 @@ func geneveDecap(b []byte) (uint32, []byte, error) {
 	return vni, b[8:], nil
 }
 
-// geneveTunnel wraps a datagram transport (datagramTunnel client side or
-// packetTunnel server side) with GENEVE framing.
+// geneveTunnel wraps a datagram transport (datagramTunnel client side or the
+// dispatcher's server-side session transport) with GENEVE framing.
 type geneveTunnel struct {
 	dt  Tunnel
 	vni uint32
@@ -91,7 +91,7 @@ func (t *geneveTunnel) Close() error                      { return t.dt.Close() 
 func (t *geneveTunnel) Label() string                     { return t.dt.Label() }
 
 type geneveServer struct {
-	conn *net.UDPConn
+	d *udpDispatcher
 }
 
 func (geneveProto) Listen(addr string, opts Options) (ProtoServer, error) {
@@ -103,35 +103,14 @@ func (geneveProto) Listen(addr string, opts Options) (ProtoServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &geneveServer{conn: conn}, nil
+	tuneSocket(conn)
+	return &geneveServer{d: newUDPDispatcher(conn, "geneve", func(tr *udpSessionTransport) Tunnel {
+		return &geneveTunnel{dt: tr, vni: uint32(rand.Intn(1 << 24))}
+	})}, nil
 }
 
-// Accept consumes the first well-formed GENEVE datagram to learn the
-// client's address, then returns a tunnel bound to that peer. Datagrams that
-// fail the header check (e.g. stray UDP traffic on the port) are ignored.
-func (s *geneveServer) Accept() (Tunnel, error) {
-	buf := make([]byte, MaxFrame)
-	for {
-		n, peer, err := s.conn.ReadFromUDP(buf)
-		if err != nil {
-			return nil, err
-		}
-		if _, _, err := geneveDecap(buf[:n]); err != nil {
-			continue
-		}
-		return &geneveTunnel{
-			dt: &packetTunnel{
-				pc:      s.conn,
-				peer:    peer,
-				pending: buf[:n],
-				label:   "geneve@" + peer.String(),
-			},
-			vni: uint32(rand.Intn(1 << 24)),
-		}, nil
-	}
-}
-
-func (s *geneveServer) Close() error { return s.conn.Close() }
+func (s *geneveServer) Accept() (Tunnel, error) { return s.d.Accept() }
+func (s *geneveServer) Close() error            { return s.d.Close() }
 
 func (geneveProto) Dial(addr string, opts Options) (Tunnel, error) {
 	ra, err := net.ResolveUDPAddr("udp", addr)

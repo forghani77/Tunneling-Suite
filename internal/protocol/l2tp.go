@@ -76,8 +76,8 @@ func l2tpDecap(sessionID uint32, cookie, b []byte) ([]byte, error) {
 	return b[12:], nil
 }
 
-// l2tpTunnel wraps a datagram transport (datagramTunnel client side or
-// packetTunnel server side) with L2TPv3 framing.
+// l2tpTunnel wraps a datagram transport (datagramTunnel client side or the
+// dispatcher's server-side session transport) with L2TPv3 framing.
 type l2tpTunnel struct {
 	dt        Tunnel
 	sessionID uint32
@@ -108,9 +108,7 @@ func (t *l2tpTunnel) Close() error                      { return t.dt.Close() }
 func (t *l2tpTunnel) Label() string                     { return t.dt.Label() }
 
 type l2tpServer struct {
-	conn      *net.UDPConn
-	sessionID uint32
-	cookie    []byte
+	d *udpDispatcher
 }
 
 func (l2tpProto) Listen(addr string, opts Options) (ProtoServer, error) {
@@ -122,37 +120,15 @@ func (l2tpProto) Listen(addr string, opts Options) (ProtoServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	tuneSocket(conn)
 	sessionID, cookie := l2tpSession(l2tpPassword(opts))
-	return &l2tpServer{conn: conn, sessionID: sessionID, cookie: cookie}, nil
+	return &l2tpServer{d: newUDPDispatcher(conn, "l2tp", func(tr *udpSessionTransport) Tunnel {
+		return &l2tpTunnel{dt: tr, sessionID: sessionID, cookie: cookie}
+	})}, nil
 }
 
-// Accept validates the first datagram's session association (Session ID +
-// Cookie) before committing; stray traffic or datagrams from a client with a
-// different shared secret are rejected.
-func (s *l2tpServer) Accept() (Tunnel, error) {
-	buf := make([]byte, MaxFrame)
-	for {
-		n, peer, err := s.conn.ReadFromUDP(buf)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := l2tpDecap(s.sessionID, s.cookie, buf[:n]); err != nil {
-			continue
-		}
-		return &l2tpTunnel{
-			dt: &packetTunnel{
-				pc:      s.conn,
-				peer:    peer,
-				pending: buf[:n],
-				label:   "l2tp@" + peer.String(),
-			},
-			sessionID: s.sessionID,
-			cookie:    s.cookie,
-		}, nil
-	}
-}
-
-func (s *l2tpServer) Close() error { return s.conn.Close() }
+func (s *l2tpServer) Accept() (Tunnel, error) { return s.d.Accept() }
+func (s *l2tpServer) Close() error            { return s.d.Close() }
 
 func (l2tpProto) Dial(addr string, opts Options) (Tunnel, error) {
 	ra, err := net.ResolveUDPAddr("udp", addr)

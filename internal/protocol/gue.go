@@ -74,8 +74,8 @@ func gueDecap(b []byte) (uint32, uint16, []byte, error) {
 	return vni, binary.BigEndian.Uint16(b[1:3]), b[8:], nil
 }
 
-// gueTunnel wraps a datagram transport (datagramTunnel client side or
-// packetTunnel server side) with GUE framing.
+// gueTunnel wraps a datagram transport (datagramTunnel client side or the
+// dispatcher's server-side session transport) with GUE framing.
 type gueTunnel struct {
 	dt  Tunnel
 	vni uint32
@@ -109,7 +109,7 @@ func (t *gueTunnel) Close() error                      { return t.dt.Close() }
 func (t *gueTunnel) Label() string                     { return t.dt.Label() }
 
 type gueServer struct {
-	conn *net.UDPConn
+	d *udpDispatcher
 }
 
 func (gueProto) Listen(addr string, opts Options) (ProtoServer, error) {
@@ -121,35 +121,14 @@ func (gueProto) Listen(addr string, opts Options) (ProtoServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &gueServer{conn: conn}, nil
+	tuneSocket(conn)
+	return &gueServer{d: newUDPDispatcher(conn, "gue", func(tr *udpSessionTransport) Tunnel {
+		return &gueTunnel{dt: tr, vni: rand.Uint32()}
+	})}, nil
 }
 
-// Accept consumes the first well-formed GUE datagram to learn the client's
-// address, then returns a tunnel bound to that peer. Datagrams that fail the
-// header check (e.g. stray UDP traffic on the port) are ignored.
-func (s *gueServer) Accept() (Tunnel, error) {
-	buf := make([]byte, MaxFrame)
-	for {
-		n, peer, err := s.conn.ReadFromUDP(buf)
-		if err != nil {
-			return nil, err
-		}
-		if _, _, _, err := gueDecap(buf[:n]); err != nil {
-			continue
-		}
-		return &gueTunnel{
-			dt: &packetTunnel{
-				pc:      s.conn,
-				peer:    peer,
-				pending: buf[:n],
-				label:   "gue@" + peer.String(),
-			},
-			vni: rand.Uint32(),
-		}, nil
-	}
-}
-
-func (s *gueServer) Close() error { return s.conn.Close() }
+func (s *gueServer) Accept() (Tunnel, error) { return s.d.Accept() }
+func (s *gueServer) Close() error            { return s.d.Close() }
 
 func (gueProto) Dial(addr string, opts Options) (Tunnel, error) {
 	ra, err := net.ResolveUDPAddr("udp", addr)

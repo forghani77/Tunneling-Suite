@@ -72,7 +72,7 @@ func vxlanGpeDecap(b []byte) (uint32, uint8, []byte, error) {
 }
 
 // vxlanGpeTunnel wraps a datagram transport (datagramTunnel client side or
-// packetTunnel server side) with VXLAN-GPE framing.
+// the dispatcher's server-side session transport) with VXLAN-GPE framing.
 type vxlanGpeTunnel struct {
 	dt  Tunnel
 	vni uint32
@@ -106,7 +106,7 @@ func (t *vxlanGpeTunnel) Close() error                      { return t.dt.Close(
 func (t *vxlanGpeTunnel) Label() string                     { return t.dt.Label() }
 
 type vxlanGpeServer struct {
-	conn *net.UDPConn
+	d *udpDispatcher
 }
 
 func (vxlanGpeProto) Listen(addr string, opts Options) (ProtoServer, error) {
@@ -118,35 +118,14 @@ func (vxlanGpeProto) Listen(addr string, opts Options) (ProtoServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &vxlanGpeServer{conn: conn}, nil
+	tuneSocket(conn)
+	return &vxlanGpeServer{d: newUDPDispatcher(conn, "vxlan-gpe", func(tr *udpSessionTransport) Tunnel {
+		return &vxlanGpeTunnel{dt: tr, vni: uint32(rand.Intn(1 << 24))}
+	})}, nil
 }
 
-// Accept consumes the first well-formed VXLAN-GPE datagram to learn the
-// client's address, then returns a tunnel bound to that peer. Datagrams that
-// fail the header check (e.g. stray UDP traffic on the port) are ignored.
-func (s *vxlanGpeServer) Accept() (Tunnel, error) {
-	buf := make([]byte, MaxFrame)
-	for {
-		n, peer, err := s.conn.ReadFromUDP(buf)
-		if err != nil {
-			return nil, err
-		}
-		if _, _, _, err := vxlanGpeDecap(buf[:n]); err != nil {
-			continue
-		}
-		return &vxlanGpeTunnel{
-			dt: &packetTunnel{
-				pc:      s.conn,
-				peer:    peer,
-				pending: buf[:n],
-				label:   "vxlan-gpe@" + peer.String(),
-			},
-			vni: uint32(rand.Intn(1 << 24)),
-		}, nil
-	}
-}
-
-func (s *vxlanGpeServer) Close() error { return s.conn.Close() }
+func (s *vxlanGpeServer) Accept() (Tunnel, error) { return s.d.Accept() }
+func (s *vxlanGpeServer) Close() error            { return s.d.Close() }
 
 func (vxlanGpeProto) Dial(addr string, opts Options) (Tunnel, error) {
 	ra, err := net.ResolveUDPAddr("udp", addr)

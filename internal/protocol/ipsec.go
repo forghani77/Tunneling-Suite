@@ -177,9 +177,7 @@ func (t *ipsecTunnel) Close() error                      { return t.dt.Close() }
 func (t *ipsecTunnel) Label() string                     { return t.dt.Label() }
 
 type ipsecServer struct {
-	conn *net.UDPConn
-	key  []byte
-	salt []byte
+	d *udpDispatcher
 }
 
 func (ipsecProto) Listen(addr string, opts Options) (ProtoServer, error) {
@@ -191,37 +189,15 @@ func (ipsecProto) Listen(addr string, opts Options) (ProtoServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	tuneSocket(conn)
 	key, salt := ipsecKey(ipsecPassword(opts))
-	return &ipsecServer{conn: conn, key: key, salt: salt}, nil
+	return &ipsecServer{d: newUDPDispatcher(conn, "ipsec", func(tr *udpSessionTransport) Tunnel {
+		return &ipsecTunnel{dt: tr, key: key, salt: salt}
+	})}, nil
 }
 
-// Accept authenticates the first datagram against the shared SA; only a
-// valid ESP packet for our SPI passes, so stray or hostile UDP traffic is
-// rejected rather than merely structurally skipped.
-func (s *ipsecServer) Accept() (Tunnel, error) {
-	buf := make([]byte, MaxFrame)
-	for {
-		n, peer, err := s.conn.ReadFromUDP(buf)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := ipsecDecap(s.key, s.salt, buf[:n]); err != nil {
-			continue
-		}
-		return &ipsecTunnel{
-			dt: &packetTunnel{
-				pc:      s.conn,
-				peer:    peer,
-				pending: buf[:n],
-				label:   "ipsec@" + peer.String(),
-			},
-			key:  s.key,
-			salt: s.salt,
-		}, nil
-	}
-}
-
-func (s *ipsecServer) Close() error { return s.conn.Close() }
+func (s *ipsecServer) Accept() (Tunnel, error) { return s.d.Accept() }
+func (s *ipsecServer) Close() error            { return s.d.Close() }
 
 func (ipsecProto) Dial(addr string, opts Options) (Tunnel, error) {
 	ra, err := net.ResolveUDPAddr("udp", addr)

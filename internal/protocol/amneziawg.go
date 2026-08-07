@@ -238,7 +238,7 @@ func (s *awgServer) acceptClient(c net.Conn) (Tunnel, error) {
 	info := wgServerInfo{
 		ServerPub:  hex.EncodeToString(s.pub),
 		InternalIP: s.params.ServerIP,
-		EchoPort:   s.echo.conn.LocalAddr().(*net.UDPAddr).Port,
+		EchoPort:   s.echo.LocalAddr().(*net.UDPAddr).Port,
 	}
 	if err := json.NewEncoder(c).Encode(info); err != nil {
 		return nil, err
