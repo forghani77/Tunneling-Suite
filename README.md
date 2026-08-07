@@ -200,6 +200,13 @@ JSON report written to report-20260806-...json
 
 ## Usage
 
+### Flag style
+
+Long flags accept either a single or a double dash — `-server H`, `-protocol
+tcp`, `-install` are the same as `--server H`, `--protocol tcp`, `--install`.
+(The generated help and the examples below use the conventional double-dash
+form.)
+
 ### Server
 
 ```
@@ -210,6 +217,10 @@ tunnel-suite server [flags]
   --cert, --key        TLS certificate pair (default: ephemeral self-signed)
   --ss-password string Shadowsocks password (must match the client)
   --password string    shared secret for anytls/naive (must match the client)
+  --forward            enable relay sessions for client --mode forward|socks
+  --install            install this command line as a systemd service, then exit
+  --uninstall          stop and remove the installed systemd service
+  --user, --dry-run    per-user scope / preview without touching the system
 ```
 
 ### Client
@@ -237,6 +248,14 @@ tunnel-suite client [flags]
   --throughput-time float  throughput test duration in seconds (default 5)
   --throughput-size int   throughput frame size in bytes (default 60000)
   --no-color           disable ANSI colors
+  --mode string       forward|socks: run a persistent tunnel endpoint instead
+                      of the benchmark (needs --protocol, --local-port)
+  --local-port int    local listen port for forwarding mode
+  --remote-host/--remote-port
+                      destination for --mode forward
+  --install           install this command line as a systemd service, then exit
+  --uninstall         stop and remove the installed systemd service
+  --user, --dry-run   per-user scope / preview without touching the system
 ```
 
 ### Shell completion
@@ -263,6 +282,55 @@ source <(tunnel-suite completion bash)   # or zsh / fish / powershell
 After that, `tunnel-suite <TAB>` completes the subcommands, and flag values
 tab-complete protocol names (`--protocols=<TAB>`, `--throughput=<TAB>`,
 `--throughput-only=<TAB>`).
+
+### Forwarding mode
+
+Besides benchmarking, `tunnel-suite` can carry real TCP traffic through any
+of its tunnel protocols. Run the server with `--forward` (echo testing keeps
+working; without the flag the server is never an open relay), then on the
+client pick the tunnel protocol (`--protocol`, any supported protocol), how
+the tunnel is established and where it listens:
+
+```sh
+# fixed port forward: local 8080 -> remote 10.0.0.5:80 through a TCP tunnel
+tunnel-suite client --server HOST --protocol tcp --mode forward \
+  --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
+
+# local SOCKS5 proxy through a UDP tunnel
+tunnel-suite client --server HOST --protocol udp --mode socks --local-port 1080
+```
+
+`--mode forward` forwards the local port to a fixed destination; `--mode
+socks` runs a local SOCKS5 proxy whose destinations are chosen by the client
+application (e.g. `curl --socks5-hostname 127.0.0.1:1080 ...`).
+
+### Installing as a systemd service
+
+Add `--install` to the `server` or `client` command to write a systemd unit
+for exactly that command line and start it with `systemctl enable --now`
+(needs root; add `--user` for a per-user service, `--dry-run` to preview the
+unit without touching the system, `--uninstall` to stop and remove it):
+
+```sh
+sudo tunnel-suite server --install                       # serve all protocols
+sudo tunnel-suite client --server HOST --protocol tcp --mode forward \
+  --local-port 8080 --remote-host 10.0.0.5 --remote-port 80 --install
+tunnel-suite server --install --dry-run                  # preview only
+```
+
+In client install mode the tunnel protocol (`--protocol`, any supported
+protocol), the mode (`--mode forward|socks`) and the local port
+(`--local-port`) are required; the installed server enables relay by default.
+The full-featured equivalent is the `install` subcommand, which adds a custom
+unit name and lets `--uninstall` work without re-supplying the endpoint
+flags:
+
+```sh
+sudo tunnel-suite install server --base-port 20000
+sudo tunnel-suite install client --server HOST --protocol tcp \
+  --mode forward --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
+tunnel-suite install client --uninstall                  # just the unit name
+```
 
 ### Port layout
 
