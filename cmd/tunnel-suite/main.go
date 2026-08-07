@@ -441,10 +441,10 @@ discovers the offered protocols from the manifest. Pass --protocols to serve
 a subset, and keep --password / --ss-password in sync with the client for the
 protocols that share a secret (ipsec, l2tp, anytls, naive, shadowsocks).
 
-With --forward the server also relays real TCP traffic for "tunnel-suite
-client --mode forward|socks" (echo testing keeps working; without the flag
-the server is never an open relay). Add --install to instead write a systemd
-unit for this command line and start it.`,
+Relay is on by default: the server also relays real TCP traffic for
+"tunnel-suite client --mode forward|socks" (echo testing keeps working). Pass
+-forward=false to run a pure test/echo server. Add --install to instead write
+a systemd unit for this command line and start it.`,
 		Example: `  tunnel-suite server --listen 0.0.0.0 --base-port 10000
   tunnel-suite server --protocols tcp,udp,vxlan,kcp --base-port 20000
   tunnel-suite server --forward --install`,
@@ -492,7 +492,7 @@ unit for this command line and start it.`,
 	f.StringVar(&key, "key", "", "TLS key file")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password (must match client)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp (must match client)")
-	f.BoolVar(&forward, "forward", false, "enable relay sessions for 'tunnel-suite client --mode forward|socks' (off by default)")
+	f.BoolVar(&forward, "forward", true, "enable relay sessions for 'tunnel-suite client --mode forward|socks' (on by default; -forward=false disables)")
 	f.BoolVar(&install, "install", false, "write a systemd unit for this command line, enable it and exit (needs root unless --user; the installed server enables relay by default)")
 	f.BoolVar(&uninstall, "uninstall", false, "stop and remove the installed systemd unit for this command")
 	f.BoolVar(&user, "user", false, "with --install/--uninstall: use the per-user systemd scope (no root, starts at login)")
