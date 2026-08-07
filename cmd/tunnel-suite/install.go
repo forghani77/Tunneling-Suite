@@ -244,22 +244,22 @@ func clientExecArgs(exe, server string, basePort int, protocol, mode, bind strin
 // a tunnel mode and the local listen port.
 func validateClientInstall(server, proto, mode string, localPort int, remoteHost string, remotePort int) error {
 	if server == "" {
-		return fmt.Errorf("--server is required")
+		return fmt.Errorf("-server is required (the tunnel-suite server running with -forward)")
 	}
 	if proto == "" {
-		return fmt.Errorf("--protocol is required (the tunnel protocol)")
+		return fmt.Errorf("-protocol is required (the tunnel protocol)")
 	}
 	if _, ok := protocol.ByName(protocol.NormalizeName(proto)); !ok {
 		return fmt.Errorf("unknown protocol %q (supported: %s)", proto, strings.Join(protocol.Names(), ", "))
 	}
 	if mode != "forward" && mode != "socks" {
-		return fmt.Errorf("--mode must be 'forward' or 'socks'")
+		return fmt.Errorf("-mode must be 'forward' or 'socks' (tab-complete to pick one)")
 	}
 	if localPort == 0 {
-		return fmt.Errorf("--local-port is required")
+		return fmt.Errorf("-local-port is required")
 	}
 	if mode == "forward" && (remoteHost == "" || remotePort == 0) {
-		return fmt.Errorf("--mode forward requires --remote-host and --remote-port")
+		return fmt.Errorf("-mode forward requires -remote-host and -remote-port")
 	}
 	return nil
 }
@@ -323,6 +323,7 @@ func installServerCmd() *cobra.Command {
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password")
 	f.StringVar(&cert, "cert", "", "TLS certificate file")
 	f.StringVar(&key, "key", "", "TLS key file")
+	_ = cmd.RegisterFlagCompletionFunc("protocols", completeProtocol)
 	return cmd
 }
 
@@ -400,5 +401,7 @@ remove the service again.`,
 	f.IntVar(&remotePort, "remote-port", 0, "remote destination port (forward mode)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password")
+	_ = cmd.RegisterFlagCompletionFunc("protocol", completeProtocol)
+	_ = cmd.RegisterFlagCompletionFunc("mode", completeMode)
 	return cmd
 }

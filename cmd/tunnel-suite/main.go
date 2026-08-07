@@ -380,6 +380,17 @@ func completeProtocol(_ *cobra.Command, _ []string, toComplete string) ([]string
 	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
+// completeMode tab-completes the forwarding-mode values for --mode.
+func completeMode(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	var out []string
+	for _, m := range []string{"forward", "socks"} {
+		if strings.HasPrefix(m, toComplete) {
+			out = append(out, m)
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
 // flagUsage prints the command's usage when flag parsing fails (unknown flag,
 // bad value, missing required flag) — runtime errors returned by RunE are
 // printed by main without the usage dump.
@@ -586,7 +597,12 @@ systemd unit for the endpoint and start it at boot.`,
 			// forward or SOCKS5 proxy) instead of running the benchmark.
 			if fwdMode != "" {
 				if fwdProtocol == "" {
-					fmt.Fprintln(os.Stderr, "error: --protocol is required in forward mode (the tunnel protocol)")
+					fmt.Fprintln(os.Stderr, "error: -protocol is required in forward mode (the tunnel protocol, e.g. -protocol anytls)")
+					_ = cmd.Usage()
+					return errSilent
+				}
+				if serverHost == "" {
+					fmt.Fprintln(os.Stderr, "error: -server is required (the tunnel-suite server running with -forward)")
 					_ = cmd.Usage()
 					return errSilent
 				}
@@ -628,6 +644,12 @@ systemd unit for the endpoint and start it at boot.`,
 					ThroughputSec:  throughputSec,
 					ThroughputSize: throughputSize,
 				},
+			}
+
+			if serverHost == "" {
+				fmt.Fprintln(os.Stderr, "error: -server is required (the tunnel-suite server host or IP)")
+				_ = cmd.Usage()
+				return errSilent
 			}
 
 			fmt.Printf("tunnel-suite client → server %s (base port %d)\n", serverHost, basePort)
@@ -730,5 +752,7 @@ systemd unit for the endpoint and start it at boot.`,
 	for _, name := range []string{"protocols", "throughput", "throughput-only"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, completeProtocol)
 	}
+	_ = cmd.RegisterFlagCompletionFunc("protocol", completeProtocol)
+	_ = cmd.RegisterFlagCompletionFunc("mode", completeMode)
 	return cmd
 }
