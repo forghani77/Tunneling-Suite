@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -61,11 +62,124 @@ add the sourcing line to your shell's rc file automatically.
 	return gen
 }
 
+// bashFallbacks are self-contained definitions of the bash-completion package
+// helpers that cobra's generated bash script relies on (_get_comp_words_by_ref,
+// _filedir). cobra emits these calls unconditionally, so on systems where the
+// bash-completion package is not installed (or not loaded by the shell rc) the
+// script fails with "_get_comp_words_by_ref: command not found" and offers no
+// completions at all. The guards keep the richer package versions when present
+// and only install the fallbacks otherwise. Both implement the reference
+// behaviour for the argument forms cobra uses: _get_comp_words_by_ref with the
+// "-n =:" exclude set (so --flag=value stays one word), and _filedir -d for
+// directory-only completion.
+const bashFallbacks = `# Fallback implementations of the bash-completion helpers the script needs.
+# The bash-completion package is not installed or loaded on every system;
+# without these the script fails with "_get_comp_words_by_ref: command not
+# found" and completes nothing. The guards keep the package versions when
+# present.
+if ! declare -F _get_comp_words_by_ref >/dev/null 2>&1; then
+_get_comp_words_by_ref()
+{
+    local exclude flag i OPTIND=1
+    local vcur vcword vprev vwords
+
+    while getopts "c:i:n:p:w:" flag "$@"; do
+        case $flag in
+            c) vcur=$OPTARG ;;
+            i) vcword=$OPTARG ;;
+            n) exclude=$OPTARG ;;
+            p) vprev=$OPTARG ;;
+            w) vwords=$OPTARG ;;
+            *) return 1 ;;
+        esac
+    done
+    while [[ $# -ge $OPTIND ]]; do
+        case ${!OPTIND} in
+            cur) vcur=cur ;;
+            prev) vprev=prev ;;
+            cword) vcword=cword ;;
+            words) vwords=words ;;
+            *) return 1 ;;
+        esac
+        ((OPTIND += 1))
+    done
+
+    local excl=""
+    [[ -n $exclude ]] && excl="[${exclude//[^$COMP_WORDBREAKS]/}]"
+
+    local wcur wprev wcword
+    local -a wwords=()
+    wcword=$COMP_CWORD
+    if [[ -n $excl ]]; then
+        local line=$COMP_LINE w
+        local wcount=0
+        for ((i = 0; i < ${#COMP_WORDS[@]}; i++)); do
+            w=${COMP_WORDS[i]}
+            if (( i > 0 )) && [[ $w == +($excl) ]]; then
+                [[ $line != [[:blank:]]* ]] && ((wcount > 0)) && ((wcount--))
+                wwords[wcount]+=$w
+                [[ $i == $COMP_CWORD ]] && wcword=$wcount
+                line=${line#*"$w"}
+                [[ $line == [[:blank:]]* ]] && ((wcount++))
+                ((i < ${#COMP_WORDS[@]} - 1)) && ((i++)) || break
+            fi
+            wwords[wcount]+=$w
+            [[ $i == $COMP_CWORD ]] && wcword=$wcount
+            line=${line#*"$w"}
+            ((wcount++))
+        done
+    else
+        wwords=("${COMP_WORDS[@]}")
+    fi
+
+    wcur="${wwords[wcword]}"
+    wprev=""
+    [[ $wcword -ge 1 ]] && wprev="${wwords[wcword-1]}"
+
+    [[ -n $vwords ]] && { unset -v "$vwords"; eval "$vwords=(\"\${wwords[@]}\")"; }
+    [[ -n $vcword ]] && { unset -v "$vcword"; eval "$vcword=\"\$wcword\""; }
+    [[ -n $vprev ]] && { unset -v "$vprev"; eval "$vprev=\"\$wprev\""; }
+    [[ -n $vcur ]] && { unset -v "$vcur"; eval "$vcur=\"\$wcur\""; }
+}
+fi
+
+if ! declare -F _filedir >/dev/null 2>&1; then
+_filedir()
+{
+    local IFS=$'\n'
+    local -a toks=()
+    if [[ $1 == -d ]]; then
+        toks=($(compgen -d -- "${cur-}"))
+    else
+        toks=($(compgen -f -- "${cur-}"))
+    fi
+    if ((${#toks[@]} != 0)); then
+        compopt -o filenames 2>/dev/null
+        COMPREPLY+=("${toks[@]}")
+    fi
+}
+fi
+`
+
 // genCompletionScript writes the cobra completion script for shell to w.
 func genCompletionScript(cmd *cobra.Command, shell string, w io.Writer) error {
 	switch shell {
 	case "bash":
-		return cmd.GenBashCompletionV2(w, true)
+		// cobra's bash script calls _get_comp_words_by_ref and _filedir from
+		// the bash-completion package unconditionally; inject self-contained
+		// fallbacks right after the header so completion works even when that
+		// package is missing, and guard them so the real package wins when
+		// present.
+		var buf bytes.Buffer
+		if err := cmd.GenBashCompletionV2(&buf, true); err != nil {
+			return err
+		}
+		script := buf.String()
+		if i := strings.IndexByte(script, '\n'); i >= 0 {
+			script = script[:i+1] + bashFallbacks + script[i+1:]
+		}
+		_, err := w.Write([]byte(script))
+		return err
 	case "zsh":
 		return cmd.GenZshCompletion(w)
 	case "fish":

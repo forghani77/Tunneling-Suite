@@ -284,6 +284,11 @@ After that, `tunnel-suite <TAB>` completes the subcommands, and flag values
 tab-complete protocol names (`--protocols=<TAB>`, `--throughput=<TAB>`,
 `--throughput-only=<TAB>`).
 
+The bash script is self-contained: it embeds the small `_get_comp_words_by_ref`
+/ `_filedir` helpers it needs, so it keeps working even when the
+`bash-completion` package is not installed (the script prefers the real
+package when it is loaded).
+
 ### Forwarding mode
 
 Besides benchmarking, `tunnel-suite` can carry real TCP traffic through any
@@ -332,6 +337,36 @@ sudo tunnel-suite install client --server HOST --protocol tcp \
   --mode forward --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
 tunnel-suite install client --uninstall                  # just the unit name
 ```
+
+#### System vs `--user` services
+
+Both `--install` and `install server|client` write a systemd unit and start
+it with `systemctl enable --now`. Without `--user` the unit is a **system**
+service; with `--user` it becomes a **per-user** service:
+
+|                        | system (default)                   | `--user`                            |
+|------------------------|------------------------------------|-------------------------------------|
+| unit file              | `/etc/systemd/system/…service`     | `~/.config/systemd/user/…service`   |
+| needs root             | yes (`sudo`)                       | no                                  |
+| starts when            | **boot** (`multi-user.target`)     | **login** (`default.target`)        |
+| controlling command    | `systemctl …`                      | `systemctl --user …`                |
+| environment            | minimal, clean                     | inherits your login session         |
+| logs                   | `journalctl -u …`                  | `journalctl --user -u …`            |
+
+A `--user` service is enabled just like a system one, but the user systemd
+session only exists once you log in — so after a reboot it stays dormant
+until login. To make user services start at boot without a login, enable
+*lingering* for the account:
+
+```sh
+loginctl enable-linger "$USER"     # user services now start at boot
+loginctl disable-linger "$USER"    # revert
+```
+
+Rule of thumb: the **server** on a VPS should be a system service (no
+`--user`, starts at boot, no login needed); a **client** tunnel on a machine
+you log into can be either — `--user` (plus optional linger) keeps it
+root-free. `--dry-run` prints the exact unit and commands either way.
 
 ### Port layout
 
