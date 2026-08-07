@@ -313,6 +313,9 @@ func init() {
 	// registered independently, so dynamic completion keeps working).
 	rootCmd.AddCommand(completionCmd())
 	rootCmd.AddCommand(installCmd())
+	// Render help/usage with single-dash long flags (-install, -server H),
+	// matching the input style the CLI accepts (--flag stays valid too).
+	installSingleDashHelp(rootCmd)
 }
 
 func serverCmd() *cobra.Command {

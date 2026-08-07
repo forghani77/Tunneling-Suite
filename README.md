@@ -204,8 +204,8 @@ JSON report written to report-20260806-...json
 
 Long flags accept either a single or a double dash — `-server H`, `-protocol
 tcp`, `-install` are the same as `--server H`, `--protocol tcp`, `--install`.
-(The generated help and the examples below use the conventional double-dash
-form.)
+The generated help renders the single-dash form; the examples below use the
+conventional double-dash spelling.
 
 ### Server
 
