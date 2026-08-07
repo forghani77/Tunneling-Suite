@@ -229,8 +229,11 @@ tunnel-suite client [flags]
   --password string    shared secret for anytls/naive (must match the server)
   --throughput string  comma-separated protocols to run a throughput speed
                        test against (default: none)
-  --throughput-only    run only the throughput speed tests, skipping the
-                       standard benchmark
+  --throughput-only [list]
+                       run only the throughput speed tests, skipping the
+                       standard benchmark; takes an optional comma-separated
+                       list (--throughput-only tcp,amnezia), or bare to reuse
+                       the --throughput list
   --throughput-time float  throughput test duration in seconds (default 5)
   --throughput-size int   throughput frame size in bytes (default 60000)
   --no-color           disable ANSI colors
@@ -286,8 +289,11 @@ so the echo can be matched by sequence number even on lossy datagram tunnels.
 Passing `--throughput tcp,udp,...` runs a speed test for exactly those
 protocols — the speed test is never run for unlisted protocols. By default it
 runs after the standard benchmark; add `--throughput-only` to run nothing but
-the speed tests. The client blasts large frames at the server for
-`--throughput-time` seconds while the server's echo loop returns them, then
+the speed tests. `--throughput-only` can carry the list itself, so
+`--throughput-only tcp,amnezia` is shorthand for
+`--throughput tcp,amnezia --throughput-only`. The client blasts large frames
+at the server for `--throughput-time` seconds while the server's echo loop
+returns them, then
 reports the achieved **upload** (client→server) and **download** (server→client
 echo) rates in Mbps, plus frame loss and the volume transferred:
 
@@ -297,6 +303,13 @@ tunnel-suite client --server <ip> --base-port 10000 --throughput tcp,wireguard -
 THROUGHPUT — echo test, 10.0s @ 60000B frames
 PROTOCOL  KIND  STATUS  UPLOAD     DOWNLOAD   LOSS    DATA
 tcp       stream  ok   912.4 Mbps  910.1 Mbps  0.00%  1.1 GB up / 1.1 GB down
+```
+
+To skip the standard benchmark entirely, `--throughput-only` takes the list
+directly (bare, it reuses the `--throughput` list):
+
+```
+tunnel-suite client --server <ip> --base-port 10000 --throughput-only tcp,wireguard --throughput-time 10
 ```
 
 A typical full run — benchmark **all** protocols (the client default is
