@@ -247,8 +247,12 @@ func runClient(args []string) int {
 		return 1
 	}
 
-	report.PrintTable(os.Stdout, rep.Results, !*noColor)
-	report.PrintSummary(os.Stdout, rep.Summary, !*noColor)
+	if len(rep.Results) > 0 {
+		// In throughput-only mode the standard benchmark is skipped entirely,
+		// so there is no table to render.
+		report.PrintTable(os.Stdout, rep.Results, !*noColor)
+		report.PrintSummary(os.Stdout, rep.Summary, !*noColor)
+	}
 
 	if len(rep.Throughput) > 0 {
 		report.PrintThroughputTable(os.Stdout, rep.Throughput, *throughputSec, *throughputSize, !*noColor)
