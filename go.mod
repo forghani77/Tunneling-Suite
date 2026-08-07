@@ -9,6 +9,7 @@ require (
 	github.com/quic-go/quic-go v0.61.0
 	github.com/sagernet/sing v0.8.12
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5
+	github.com/spf13/cobra v1.10.2
 	github.com/xtaci/kcp-go/v5 v5.6.72
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.57.0
@@ -17,12 +18,14 @@ require (
 
 require (
 	github.com/chen3feng/stl4go v0.1.1 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
 	github.com/klauspost/reedsolomon v1.12.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tevino/abool v1.2.0 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect

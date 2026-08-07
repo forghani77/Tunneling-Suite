@@ -239,6 +239,27 @@ tunnel-suite client [flags]
   --no-color           disable ANSI colors
 ```
 
+### Shell completion
+
+The CLI is built on Cobra, so `--help` is rich and every subcommand supports
+tab-completion (commands, flags and protocol names). Generate and source the
+script for your shell once:
+
+```sh
+# bash
+source <(tunnel-suite completion bash)
+# zsh
+source <(tunnel-suite completion zsh)
+# fish
+tunnel-suite completion fish | source
+# powershell
+tunnel-suite completion powershell | Out-String | Invoke-Expression
+```
+
+After that, `tunnel-suite <TAB>` completes the subcommands, and flag values
+tab-complete protocol names (`--protocols=<TAB>`, `--throughput=<TAB>`,
+`--throughput-only=<TAB>`).
+
 ### Port layout
 
 | offset | use                          |
