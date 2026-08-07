@@ -51,8 +51,8 @@ Examples:
   tunnel-suite client --server 203.0.113.10 --throughput tcp,udp,kcp --throughput-time 10
   tunnel-suite client --server 203.0.113.10 --throughput-only gre,kcp --throughput-size 1400
 
-Shell autocomplete: run "tunnel-suite completion <bash|zsh|fish|powershell>"
-and source the output to tab-complete commands, flags and protocol names.
+Shell autocomplete: run "tunnel-suite completion install" to auto-detect your
+shell and enable tab-completion (commands, flags and protocol names).
 `,
 	SilenceErrors: true,
 	SilenceUsage:  true,
@@ -173,6 +173,11 @@ func flagUsage(cmd *cobra.Command, err error) error {
 func init() {
 	rootCmd.AddCommand(serverCmd())
 	rootCmd.AddCommand(clientCmd())
+	// Custom completion command: defines an `install` subcommand and replaces
+	// cobra's default one (cobra skips its default when a command named
+	// "completion" already exists, and the hidden __complete commands are
+	// registered independently, so dynamic completion keeps working).
+	rootCmd.AddCommand(completionCmd())
 }
 
 func serverCmd() *cobra.Command {

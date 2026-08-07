@@ -242,18 +242,22 @@ tunnel-suite client [flags]
 ### Shell completion
 
 The CLI is built on Cobra, so `--help` is rich and every subcommand supports
-tab-completion (commands, flags and protocol names). Generate and source the
-script for your shell once:
+tab-completion (commands, flags and protocol names). Enable it in one step —
+the command detects your shell and appends the sourcing line to its rc file
+(`~/.bashrc`, `~/.zshrc`, `~/.config/fish/config.fish`, or the PowerShell
+profile):
 
 ```sh
-# bash
-source <(tunnel-suite completion bash)
-# zsh
-source <(tunnel-suite completion zsh)
-# fish
-tunnel-suite completion fish | source
-# powershell
-tunnel-suite completion powershell | Out-String | Invoke-Expression
+tunnel-suite completion install          # auto-detects the shell
+# or explicitly: tunnel-suite completion install bash|zsh|fish|powershell
+```
+
+The managed block is idempotent (re-running only rewrites it in place) and
+`tunnel-suite completion install --uninstall` removes it. You can also just
+generate the script and source it manually:
+
+```sh
+source <(tunnel-suite completion bash)   # or zsh / fish / powershell
 ```
 
 After that, `tunnel-suite <TAB>` completes the subcommands, and flag values
