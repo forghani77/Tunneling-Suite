@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -72,6 +74,32 @@ func TestRewriteCompletionFlags(t *testing.T) {
 	}
 }
 
+// TestBashCompletionHasFallbacks verifies the generated bash script is
+// self-contained: cobra's script calls _get_comp_words_by_ref and _filedir
+// from the external bash-completion package unconditionally, so on systems
+// without that package completion fails with "command not found". The fallback
+// definitions are injected right after the header, guarded so the real package
+// still wins when present.
+func TestBashCompletionHasFallbacks(t *testing.T) {
+	var buf bytes.Buffer
+	if err := genCompletionScript(rootCmd, "bash", &buf); err != nil {
+		t.Fatalf("genCompletionScript(bash) error = %v", err)
+	}
+	out := buf.String()
+	// The fallback block must be present, guarded, and placed before any use.
+	if !strings.Contains(out, "if ! declare -F _get_comp_words_by_ref >/dev/null 2>&1; then") {
+		t.Error("bash script missing guarded _get_comp_words_by_ref fallback")
+	}
+	if !strings.Contains(out, "if ! declare -F _filedir >/dev/null 2>&1; then") {
+		t.Error("bash script missing guarded _filedir fallback")
+	}
+	fallbackPos := strings.Index(out, "if ! declare -F _get_comp_words_by_ref")
+	usePos := strings.Index(out, `_get_comp_words_by_ref "$@" cur prev words cword`)
+	if fallbackPos < 0 || usePos < 0 || fallbackPos > usePos {
+		t.Errorf("fallback must be defined before its use (fallback %d, use %d)", fallbackPos, usePos)
+	}
+}
+
 // TestRunCompletion exercises the full completion path the way main() runs it:
 // argv normalized (single-dash token → --form so cobra's flag completion
 // matches), then execute the hidden __complete command with stdout captured,
@@ -121,6 +149,66 @@ func TestRunCompletion(t *testing.T) {
 			}
 			if bad {
 				t.Errorf("output must not contain candidate %q:\n%s", c.wantNot, out)
+			}
+		})
+	}
+}
+
+// TestRenameCompletionName verifies that generated scripts register completion
+// under the running executable's basename rather than the compiled-in command
+// name. cobra hardcodes the "Use" name (tunnel-suite) in the registration
+// line, so a binary installed as e.g. "tunnel-suit" would otherwise get no
+// completion for the name the user actually types.
+func TestRenameCompletionName(t *testing.T) {
+	const script = "#compdef tunnel-suite\ncompdef _tunnel-suite tunnel-suite\ncomplete -o default -F __start_tunnel-suite tunnel-suite\n"
+	cases := []struct {
+		name    string
+		oldName string
+		newName string
+		want    string
+	}{
+		{name: "renamed binary registers new name", oldName: "tunnel-suite", newName: "tunnel-suit", want: "#compdef tunnel-suit\ncompdef _tunnel-suit tunnel-suit\ncomplete -o default -F __start_tunnel-suit tunnel-suit\n"},
+		{name: "no-op when name matches", oldName: "tunnel-suite", newName: "tunnel-suite", want: script},
+		{name: "no-op when new name empty", oldName: "tunnel-suite", newName: "", want: script},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := renameCompletionName(script, c.oldName, c.newName); got != c.want {
+				t.Errorf("got  %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestGenCompletionScriptRegistersExecName builds the real binary name into
+// the completion: renameCompletionCmd substitutes the running executable's
+// basename for the compiled-in command name in every generated shell script.
+func TestGenCompletionScriptRegistersExecName(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		t.Skip("cannot determine test binary name")
+	}
+	base := filepath.Base(exe)
+	// The registration line must reference the actual binary basename, not the
+	// compiled-in name. (The basename contains "tunnel-suite" as a substring
+	// for the .test binary, so match the full registration line instead.)
+	wantLines := []string{
+		"complete -o default -F __start_" + base + " " + base,
+		"#compdef " + base,
+		"complete -c " + base,
+		"-CommandName '" + base + "'",
+	}
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		t.Run(shell, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := genCompletionScript(rootCmd, shell, &buf); err != nil {
+				t.Fatalf("genCompletionScript(%s) error = %v", shell, err)
+			}
+			out := buf.String()
+			// The exact registration marker per shell, e.g. the bash
+			// "complete -F __start_<base> <base>" line.
+			if !strings.Contains(out, wantLines[map[string]int{"bash": 0, "zsh": 1, "fish": 2, "powershell": 3}[shell]]) {
+				t.Errorf("generated %s script does not register %q:\n%s", shell, base, out[:200])
 			}
 		})
 	}
