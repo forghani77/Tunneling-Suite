@@ -50,8 +50,9 @@ func (icmp6Proto) IsRawDatagram() bool { return true }
 // outer IPv6 header; the payload passed to the kernel is the ICMPv6 message
 // itself (header included).
 type icmp6Socket struct {
-	pc net.PacketConn
-	rc *ipv6.PacketConn
+	pc  net.PacketConn
+	rc  *ipv6.PacketConn
+	buf []byte // reused read buffer (payload aliases it until the next read)
 }
 
 func listenRawIP6() (*icmp6Socket, error) {
@@ -66,14 +67,18 @@ func listenRawIP6() (*icmp6Socket, error) {
 		_ = pc.Close()
 		return nil, fmt.Errorf("ipv6 pktinfo: %w", err)
 	}
+	tuneSocket(pc)
 	return &icmp6Socket{pc: pc, rc: rc}, nil
 }
 
 // ReadPacket returns the source, destination and ICMPv6 message of the next
-// received raw IPv6 packet.
+// received raw IPv6 packet. The payload aliases the socket's reused buffer
+// and is only valid until the next ReadPacket call.
 func (s *icmp6Socket) ReadPacket() (src, dst net.IP, payload []byte, err error) {
-	buf := make([]byte, 1<<16)
-	n, cm, raddr, err := s.rc.ReadFrom(buf)
+	if s.buf == nil {
+		s.buf = make([]byte, 1<<16)
+	}
+	n, cm, raddr, err := s.rc.ReadFrom(s.buf)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -84,7 +89,7 @@ func (s *icmp6Socket) ReadPacket() (src, dst net.IP, payload []byte, err error) 
 	if dst == nil {
 		dst = net.IPv6unspecified
 	}
-	return src, dst, buf[:n], nil
+	return src, dst, s.buf[:n], nil
 }
 
 // WritePacket sends an ICMPv6 message to dst, stamping src as the source
@@ -327,6 +332,9 @@ func (s *icmp6Server) dispatchLoop() {
 			// back by the kernel, or another server's echo: keep waiting.
 			continue
 		}
+		// The socket read buffer is reused, so the frame aliases it; copy it
+		// before queueing, or later reads would clobber queued frames.
+		frame = append([]byte(nil), frame...)
 		self := dst
 		if self == nil || self.IsUnspecified() {
 			self = src

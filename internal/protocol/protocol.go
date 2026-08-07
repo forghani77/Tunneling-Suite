@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -93,7 +95,9 @@ const RawDatagramMaxFrame = 1400
 type Tunnel interface {
 	// WriteFrame writes one complete test frame.
 	WriteFrame(p []byte) error
-	// ReadFrame reads one complete test frame.
+	// ReadFrame reads one complete test frame. The returned slice aliases an
+	// internal (reused) buffer and is only valid until the next ReadFrame
+	// call; callers must copy any data they need to retain.
 	ReadFrame() ([]byte, error)
 	// SetReadDeadline bounds the next ReadFrame call.
 	SetReadDeadline(t time.Time) error
@@ -191,6 +195,32 @@ func DecodeFrame(b []byte) (ftype byte, seq uint32, ts time.Time, err error) {
 // Shared tunnel implementations
 // ---------------------------------------------------------------------------
 
+// socketBufSize is the SO_RCVBUF/SO_SNDBUF requested for datagram sockets.
+// The kernel clamps the actual size to net.core.rmem_max/wmem_max, so on a
+// host with tiny defaults (often 208 KiB) a larger value only takes effect
+// after those sysctls are raised. Best-effort either way.
+const socketBufSize = 4 << 20 // 4 MiB
+
+// tuneSocket best-effort requests a larger kernel send/receive buffer on a
+// socket, so a momentary processing stall does not overflow the buffer and
+// drop whole datagrams during a throughput blast. Sockets that do not expose
+// a raw file descriptor (library-backed conns) are left alone.
+func tuneSocket(c any) {
+	sc, ok := c.(interface{ SyscallConn() (syscall.RawConn, error) })
+	if !ok {
+		return
+	}
+	rc, err := sc.SyscallConn()
+	if err != nil {
+		return
+	}
+	_ = rc.Control(func(fd uintptr) {
+		// The kernel doubles the value internally, so request half the target.
+		_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, socketBufSize/2)
+		_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF, socketBufSize/2)
+	})
+}
+
 // duplex is the minimal byte-stream interface shared by net.Conn,
 // quic.Stream, http3.RequestStream, etc.
 type duplex interface {
@@ -252,14 +282,20 @@ func (t *streamTunnel) Close() error                      { return t.c.Close() }
 func (t *streamTunnel) Label() string                     { return t.label }
 
 // datagramTunnel wraps a connected datagram connection (net.Conn based);
-// every frame is exactly one datagram.
+// every frame is exactly one datagram. The read buffer is reused across
+// ReadFrame calls (the returned slice is only valid until the next call) and
+// the socket buffers are enlarged on first use, so a throughput blast does
+// not allocate 64 KiB per packet and does not overflow the kernel buffer.
 type datagramTunnel struct {
-	c       net.Conn
-	pending []byte
-	label   string
+	c        net.Conn
+	pending  []byte
+	label    string
+	buf      []byte // reused read buffer
+	tuneOnce sync.Once
 }
 
 func (t *datagramTunnel) WriteFrame(p []byte) error {
+	t.tuneOnce.Do(func() { tuneSocket(t.c) })
 	if len(p) > MaxFrame {
 		return ErrFrameTooLarge
 	}
@@ -268,32 +304,40 @@ func (t *datagramTunnel) WriteFrame(p []byte) error {
 }
 
 func (t *datagramTunnel) ReadFrame() ([]byte, error) {
+	t.tuneOnce.Do(func() { tuneSocket(t.c) })
 	if len(t.pending) > 0 {
 		b := t.pending
 		t.pending = nil
 		return b, nil
 	}
-	buf := make([]byte, MaxFrame)
-	n, err := t.c.Read(buf)
+	if t.buf == nil {
+		t.buf = make([]byte, MaxFrame)
+	}
+	n, err := t.c.Read(t.buf)
 	if err != nil {
 		return nil, err
 	}
-	return buf[:n], nil
+	return t.buf[:n], nil
 }
 
 func (t *datagramTunnel) SetReadDeadline(d time.Time) error { return t.c.SetDeadline(d) }
 func (t *datagramTunnel) Close() error                      { return t.c.Close() }
 func (t *datagramTunnel) Label() string                     { return t.label }
 
-// packetTunnel wraps a PacketConn bound to a fixed peer (server side).
+// packetTunnel wraps a PacketConn bound to a fixed peer (server side). Like
+// datagramTunnel, it reuses its read buffer and enlarges the socket buffers
+// on first use.
 type packetTunnel struct {
-	pc      net.PacketConn
-	peer    net.Addr
-	pending []byte
-	label   string
+	pc       net.PacketConn
+	peer     net.Addr
+	pending  []byte
+	label    string
+	buf      []byte // reused read buffer
+	tuneOnce sync.Once
 }
 
 func (t *packetTunnel) WriteFrame(p []byte) error {
+	t.tuneOnce.Do(func() { tuneSocket(t.pc) })
 	if len(p) > MaxFrame {
 		return ErrFrameTooLarge
 	}
@@ -302,17 +346,20 @@ func (t *packetTunnel) WriteFrame(p []byte) error {
 }
 
 func (t *packetTunnel) ReadFrame() ([]byte, error) {
+	t.tuneOnce.Do(func() { tuneSocket(t.pc) })
 	if len(t.pending) > 0 {
 		b := t.pending
 		t.pending = nil
 		return b, nil
 	}
-	buf := make([]byte, MaxFrame)
-	n, _, err := t.pc.ReadFrom(buf)
+	if t.buf == nil {
+		t.buf = make([]byte, MaxFrame)
+	}
+	n, _, err := t.pc.ReadFrom(t.buf)
 	if err != nil {
 		return nil, err
 	}
-	return buf[:n], nil
+	return t.buf[:n], nil
 }
 
 func (t *packetTunnel) SetReadDeadline(d time.Time) error { return t.pc.SetReadDeadline(d) }

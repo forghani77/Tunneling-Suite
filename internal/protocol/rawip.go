@@ -23,10 +23,14 @@ const (
 	innerProto = 253
 )
 
-// rawSocket wraps a raw IPv4 socket with full header control.
+// rawSocket wraps a raw IPv4 socket with full header control. The read
+// buffer is reused across ReadPacket calls (the returned payload is only
+// valid until the next call), so a throughput blast does not allocate 64 KiB
+// per packet.
 type rawSocket struct {
-	pc net.PacketConn
-	rc *ipv4.RawConn
+	pc  net.PacketConn
+	rc  *ipv4.RawConn
+	buf []byte
 }
 
 // listenRawIP opens a raw IPv4 socket for the given IP protocol number.
@@ -40,16 +44,20 @@ func listenRawIP(protoNum int) (*rawSocket, error) {
 		_ = pc.Close()
 		return nil, err
 	}
+	tuneSocket(pc)
 	return &rawSocket{pc: pc, rc: rc}, nil
 }
 
 func (r *rawSocket) Close() error { return r.pc.Close() }
 
 // ReadPacket returns the source, destination and payload of the next
-// received raw IP packet.
+// received raw IP packet. The payload aliases the socket's reused buffer and
+// is only valid until the next ReadPacket call.
 func (r *rawSocket) ReadPacket() (src, dst net.IP, payload []byte, err error) {
-	buf := make([]byte, 1<<16)
-	h, p, _, err := r.rc.ReadFrom(buf)
+	if r.buf == nil {
+		r.buf = make([]byte, 1<<16)
+	}
+	h, p, _, err := r.rc.ReadFrom(r.buf)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -384,6 +392,9 @@ func (s *rawServer) dispatchLoop() {
 			// type a client would never send: keep waiting.
 			continue
 		}
+		// The socket read buffer is reused, so the frame aliases it; copy it
+		// before queueing, or later reads would clobber queued frames.
+		frame = append([]byte(nil), frame...)
 		self := dst
 		if self == nil || self.IsUnspecified() {
 			self = src

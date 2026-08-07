@@ -33,6 +33,12 @@ type Config struct {
 // (16-bit length fields, UDP/raw payload limits) overflows.
 const DefaultThroughputSize = 60000
 
+// drainGrace is how long the reader keeps counting echoed frames after the
+// blast deadline. Frames that were still in flight when the writer stopped
+// (socket buffers, the server's echo queue, the wire) arrive during this
+// window and are counted, so they are not misreported as loss.
+const drainGrace = 300 * time.Millisecond
+
 // DefaultConfig returns sensible defaults for a local/loopback run.
 func DefaultConfig() Config {
 	return Config{
@@ -250,12 +256,15 @@ func RunThroughput(p protocol.Protocol, addr string, opts protocol.Options, cfg 
 	deadline := blastStart.Add(time.Duration(dur * float64(time.Second)))
 	var sentBytes, recvBytes, sentFrames, recvFrames atomic.Int64
 
-	// Reader: counts echoed frames back from the server until the deadline
-	// (the absolute read deadline persists across reads).
+	// Reader: counts echoed frames back from the server until shortly after
+	// the blast deadline (the absolute read deadline persists across reads).
+	// The extra drainGrace lets frames that were still in flight when the
+	// writer stopped arrive and be counted instead of being misreported as
+	// loss.
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		if err := tun.SetReadDeadline(deadline); err != nil {
+		if err := tun.SetReadDeadline(deadline.Add(drainGrace)); err != nil {
 			return
 		}
 		for {
@@ -287,12 +296,21 @@ func RunThroughput(p protocol.Protocol, addr string, opts protocol.Options, cfg 
 		sentBytes.Add(int64(len(frame)))
 		sentFrames.Add(1)
 	}
-	<-readDone
-
+	// The blast window ends when the writer stops; the drain grace period
+	// after it is not part of the measured duration, so the rates reflect
+	// exactly the window the frames were blasted over. For stream tunnels
+	// the read deadline is combined (read+write), so a write blocked across
+	// the blast boundary could wake as late as deadline+drainGrace; clamp to
+	// the nominal window so that teardown time never inflates the duration
+	// (early failures, which stop short of the window, are unaffected).
 	elapsed := time.Since(blastStart).Seconds()
 	if elapsed <= 0 {
 		elapsed = 0.001
 	}
+	if elapsed > dur {
+		elapsed = dur
+	}
+	<-readDone
 	sent := sentBytes.Load()
 	recv := recvBytes.Load()
 	sf := sentFrames.Load()

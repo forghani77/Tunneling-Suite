@@ -350,6 +350,23 @@ sudo tunnel-suite client --server <server-ip> --base-port 10000 \
 > `--throughput-size 1400` is what the clamp uses. `--throughput-size 60000`
 > still applies to everything else, and 60000-byte frames remain fine on
 > loopback.
+>
+> **What the throughput LOSS column really measures.** The reader keeps
+> counting echoed frames for a short grace period after the blast deadline
+> (so frames still in flight are counted, not reported lost), read buffers
+> are reused, and datagram sockets request 4 MiB kernel buffers. Two
+> remaining effects are real, not artifacts: over a real network a 60000-byte
+> UDP datagram is ~41 IP fragments and losing any one fragment drops the
+> whole datagram (use `--throughput-size 1400` to remove the amplification),
+> and on loopback the client can blast faster than the server's echo loop
+> can reflect, so kernel buffer drops show up there too (on a real WAN the
+> blast is capped well below the server's echo capacity). The kernel clamps
+> socket buffers to `net.core.rmem_max`/`wmem_max`; on hosts where those are
+> tiny (often 208 KiB) raise them for high-rate datagram tests:
+>
+> ```sh
+> sysctl -w net.core.rmem_max=8388608 net.core.wmem_max=8388608
+> ```
 
 Because the server echoes, the test exercises both directions at once; on an
 asymmetric path the slower direction bounds both rates. Throughput results are

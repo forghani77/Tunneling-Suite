@@ -48,7 +48,9 @@ func TestThroughputEndToEnd(t *testing.T) {
 			if res.SentBytes == 0 || res.RecvBytes == 0 || res.SentFrames == 0 {
 				t.Fatalf("no data transferred: sent=%d recv=%d frames=%d", res.SentBytes, res.RecvBytes, res.SentFrames)
 			}
-			if res.DurationSec < 0.9 || res.DurationSec > 1.5 {
+			// Elapsed must reflect the blast window, not the drain grace: the
+			// upper bound guards against a grace-period leak inflating it.
+			if res.DurationSec < 0.9 || res.DurationSec > 1.1 {
 				t.Fatalf("duration %.1fs, want ~1s", res.DurationSec)
 			}
 			if p.Kind() == protocol.KindStream && res.LossPercent != 0 {
