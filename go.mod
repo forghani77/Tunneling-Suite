@@ -1,4 +1,4 @@
-module tunnel-suit
+module tunnel-suite
 
 go 1.25.0
 

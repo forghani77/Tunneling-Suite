@@ -1,9 +1,9 @@
-// Command tunnel-suit is a tunneling-protocol test harness.
+// Command tunnel-suite is a tunneling-protocol test harness.
 //
 // Usage:
 //
-//	tunnel-suit server [flags]   # listen for tests on every protocol
-//	tunnel-suit client [flags]   # run the benchmark suite against a server
+//	tunnel-suite server [flags]   # listen for tests on every protocol
+//	tunnel-suite client [flags]   # run the benchmark suite against a server
 //
 // The server and client are the same binary; run one of each on the machines
 // you want to test connectivity between.
@@ -16,18 +16,18 @@ import (
 	"strings"
 	"time"
 
-	"tunnel-suit/internal/benchmark"
-	"tunnel-suit/internal/client"
-	"tunnel-suit/internal/protocol"
-	"tunnel-suit/internal/report"
-	"tunnel-suit/internal/server"
+	"tunnel-suite/internal/benchmark"
+	"tunnel-suite/internal/client"
+	"tunnel-suite/internal/protocol"
+	"tunnel-suite/internal/report"
+	"tunnel-suite/internal/server"
 )
 
-const usageText = `tunnel-suit — tunneling protocol test harness
+const usageText = `tunnel-suite — tunneling protocol test harness
 
 Usage:
-  tunnel-suit server [flags]   run the server (listens for tests)
-  tunnel-suit client [flags]   run the client (drives the tests)
+  tunnel-suite server [flags]   run the server (listens for tests)
+  tunnel-suite client [flags]   run the client (drives the tests)
 
 Protocols tested: tcp, udp, tls, quic, http3 (QUIC), kcp, shadowsocks,
                   gre, ipip, sit, 6to4, icmp, icmpv6 (layer-3, needs root),
@@ -39,11 +39,11 @@ Protocols tested: tcp, udp, tls, quic, http3 (QUIC), kcp, shadowsocks,
                   http, https, ws, wss, anytls, naive, smtp
 
 Examples:
-  tunnel-suit server --listen 0.0.0.0 --base-port 10000
-  tunnel-suit client --server 203.0.113.10 --base-port 10000
-  tunnel-suit client --server 203.0.113.10 --protocols tcp,tls,quic --pings 100
+  tunnel-suite server --listen 0.0.0.0 --base-port 10000
+  tunnel-suite client --server 203.0.113.10 --base-port 10000
+  tunnel-suite client --server 203.0.113.10 --protocols tcp,tls,quic --pings 100
 
-Run "tunnel-suit server --help" or "tunnel-suit client --help" for options.
+Run "tunnel-suite server --help" or "tunnel-suite client --help" for options.
 `
 
 func main() {
@@ -85,7 +85,7 @@ func runServer(args []string) int {
 	ssPass := fs.String("ss-password", "", "Shadowsocks password (must match client)")
 	password := fs.String("password", "", "shared secret for anytls/naive/ipsec/l2tp (must match client)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "tunnel-suit server — listen for tunneling tests\n\n")
+		fmt.Fprintf(fs.Output(), "tunnel-suite server — listen for tunneling tests\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -125,7 +125,7 @@ func runClient(args []string) int {
 	throughputSec := fs.Float64("throughput-time", 5, "throughput test duration (s)")
 	throughputSize := fs.Int("throughput-size", benchmark.DefaultThroughputSize, "throughput frame size (bytes)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "tunnel-suit client — run the tunneling test suite against a server\n\n")
+		fmt.Fprintf(fs.Output(), "tunnel-suite client — run the tunneling test suite against a server\n\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -157,7 +157,7 @@ func runClient(args []string) int {
 		},
 	}
 
-	fmt.Printf("tunnel-suit client → server %s (base port %d)\n", *serverHost, *basePort)
+	fmt.Printf("tunnel-suite client → server %s (base port %d)\n", *serverHost, *basePort)
 	fmt.Printf("testing: %s\n", strings.Join(protocol.Names(), ", "))
 
 	rep, err := client.Run(cfg)

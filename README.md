@@ -1,4 +1,4 @@
-# tunnel-suit
+# tunnel-suite
 
 A tunneling-protocol test harness written in Go. One binary, two modes:
 
@@ -92,7 +92,7 @@ Notes:
   (RFC 4106) — SPI, sequence number, 8-byte IV, and a GCM tag as the ICV —
   wrapped in UDP per the NAT-Traversal scheme (RFC 3948) with the 4-byte
   non-IKE marker. Both ends share one static SA: the AES-128 key and GCM
-  salt are derived from `--password` (default `tunnel-suit`), so both sides
+  salt are derived from `--password` (default `tunnel-suite`), so both sides
   authenticate each other's traffic, and a wrong or missing password fails
   the handshake. No IKE is performed; the UDP encapsulation avoids raw
   sockets and the kernel's XFRM stack. Runs without root.
@@ -175,13 +175,13 @@ Notes:
 
 ```sh
 # build
-go build -o tunnel-suit ./cmd/tunnel-suit
+go build -o tunnel-suite ./cmd/tunnel-suite
 
 # machine A (the server)
-sudo ./tunnel-suit server --listen 0.0.0.0 --base-port 10000
+sudo ./tunnel-suite server --listen 0.0.0.0 --base-port 10000
 
 # machine B (the client)
-./tunnel-suit client --server <server-ip> --base-port 10000
+./tunnel-suite client --server <server-ip> --base-port 10000
 ```
 
 On the client you'll see live progress, a summary table, and a JSON report:
@@ -203,7 +203,7 @@ JSON report written to report-20260806-...json
 ### Server
 
 ```
-tunnel-suit server [flags]
+tunnel-suite server [flags]
   --listen string      address to bind (default "0.0.0.0")
   --base-port int      base port; each protocol uses base+offset (default 10000)
   --protocols string   comma-separated subset (default: all)
@@ -215,7 +215,7 @@ tunnel-suit server [flags]
 ### Client
 
 ```
-tunnel-suit client [flags]
+tunnel-suite client [flags]
   --server string      server host or IP (required)
   --base-port int      base port, must match the server (default 10000)
   --protocols string   comma-separated subset (default: everything the server offers)
@@ -292,7 +292,7 @@ reports the achieved **upload** (client→server) and **download** (server→cli
 echo) rates in Mbps, plus frame loss and the volume transferred:
 
 ```
-tunnel-suit client --server <ip> --base-port 10000 --throughput tcp,wireguard --throughput-time 10
+tunnel-suite client --server <ip> --base-port 10000 --throughput tcp,wireguard --throughput-time 10
 
 THROUGHPUT — echo test, 10.0s @ 60000B frames
 PROTOCOL  KIND  STATUS  UPLOAD     DOWNLOAD   LOSS    DATA
@@ -304,10 +304,10 @@ everything the server offers) and speed-test a chosen set:
 
 ```sh
 # on the server
-sudo tunnel-suit server --base-port 10000
+sudo tunnel-suite server --base-port 10000
 
 # on the client: benchmark all protocols + speed-test a chosen set
-sudo tunnel-suit client --server <server-ip> --base-port 10000 \
+sudo tunnel-suite client --server <server-ip> --base-port 10000 \
   --throughput tcp,udp,icmp,icmpv6,gre,ipip,sit,tls,quic \
   --throughput-time 5
 ```
@@ -319,7 +319,7 @@ sudo tunnel-suit client --server <server-ip> --base-port 10000 \
 > their names to `--throughput`:
 >
 > ```sh
-> tunnel-suit client --server <server-ip> --base-port 10000 \
+> tunnel-suite client --server <server-ip> --base-port 10000 \
 >   --throughput tcp,udp,icmp,icmpv6,gre,ipip,sit,tls,quic,wireguard,amnezia,amnezia2 \
 >   --throughput-time 5
 > ```
@@ -341,7 +341,7 @@ also included in the JSON report under `throughput`.
 ## Project layout
 
 ```
-cmd/tunnel-suit/        CLI entry point (server/client subcommands)
+cmd/tunnel-suite/        CLI entry point (server/client subcommands)
 internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         and one file per protocol (tcp, udp, tls, quic,
                         h3, kcp, shadowsocks, gre, ipip, sit, 6to4, geneve,

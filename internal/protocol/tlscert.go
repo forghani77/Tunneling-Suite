@@ -28,7 +28,7 @@ func generateSelfSigned() (tls.Certificate, error) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(time.Now().UnixNano()),
-		Subject:               pkix.Name{CommonName: "tunnel-suit"},
+		Subject:               pkix.Name{CommonName: "tunnel-suite"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

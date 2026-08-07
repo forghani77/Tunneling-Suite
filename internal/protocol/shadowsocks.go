@@ -5,7 +5,7 @@ import (
 )
 
 // DefaultSSPassword is used when no password is configured on either side.
-const DefaultSSPassword = "tunnel-suit-test-password"
+const DefaultSSPassword = "tunnel-suite-test-password"
 
 // ssProto tunnels bytes through a Shadowsocks AEAD (AES-128-GCM) stream.
 type ssProto struct{}

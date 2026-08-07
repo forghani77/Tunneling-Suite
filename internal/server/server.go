@@ -1,4 +1,4 @@
-// Package server runs the server side of the tunnel-suit harness: it starts
+// Package server runs the server side of the tunnel-suite harness: it starts
 // every configured protocol listener, echoes probes back to clients, and
 // serves a small JSON manifest on the control port.
 package server
@@ -13,7 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"tunnel-suit/internal/protocol"
+	"tunnel-suite/internal/protocol"
 )
 
 // Config configures the server.
@@ -92,7 +92,7 @@ func Run(cfg Config) error {
 		}
 	}()
 
-	log.Printf("tunnel-suit server ready on %s, base port %d", cfg.Listen, cfg.BasePort)
+	log.Printf("tunnel-suite server ready on %s, base port %d", cfg.Listen, cfg.BasePort)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)

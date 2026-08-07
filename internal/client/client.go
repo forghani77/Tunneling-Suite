@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	"tunnel-suit/internal/benchmark"
-	"tunnel-suit/internal/protocol"
-	"tunnel-suit/internal/report"
+	"tunnel-suite/internal/benchmark"
+	"tunnel-suite/internal/protocol"
+	"tunnel-suite/internal/report"
 )
 
 // Config configures the client run.

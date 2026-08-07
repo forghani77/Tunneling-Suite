@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
-	"tunnel-suit/internal/report"
+	"tunnel-suite/internal/report"
 )
 
 func writeJSON(path string, rep *report.Report) error {

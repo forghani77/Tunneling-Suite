@@ -117,15 +117,22 @@ func (s *wsServer) Close() error {
 
 func dialWS(addr string, tlsMode bool) (Tunnel, error) {
 	scheme := "ws"
-	dopts := &websocket.DialOptions{}
+	// The harness measures the direct tunnel path between client and server.
+	// Bypass any environment HTTP proxy (HTTP_PROXY/HTTPS_PROXY): Go's
+	// http.DefaultTransport routes dials through it, and a WebSocket upgrade
+	// cannot survive the proxy hop (the remote server answers 426 to the
+	// stripped GET). A nil Proxy on the transport disables proxying.
+	tr := &http.Transport{Proxy: nil}
+	dopts := &websocket.DialOptions{
+		HTTPClient: &http.Client{Transport: tr},
+	}
 	if tlsMode {
 		scheme = "wss"
-		dopts.HTTPClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		}
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
+	// Clean up the idle transport so dialing many times does not leak
+	// goroutines in tests; the tunnel itself owns its socket via NetConn.
+	defer tr.CloseIdleConnections()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	c, _, err := websocket.Dial(ctx, scheme+"://"+addr+"/", dopts)

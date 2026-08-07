@@ -16,7 +16,7 @@ func (quicProto) Kind() Kind      { return KindStream }
 func (quicProto) Overhead() int   { return 48 } // 20 IP + 8 UDP + ~20 QUIC short header
 func (quicProto) NeedsRoot() bool { return false }
 
-const quicALPN = "tunnel-suit"
+const quicALPN = "tunnel-suite"
 
 func quicClientTLS() *tls.Config {
 	return &tls.Config{InsecureSkipVerify: true, NextProtos: []string{quicALPN}}

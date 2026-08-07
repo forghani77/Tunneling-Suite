@@ -109,7 +109,7 @@ func (h3Proto) Dial(addr string, opts Options) (Tunnel, error) {
 		URL:    u,
 		Host:   addr,
 		// :protocol pseudo-header (RFC 9220); must be a valid HTTP token.
-		Proto:  "tunnel-suit",
+		Proto:  "tunnel-suite",
 		Header: http.Header{},
 	}
 

@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"tunnel-suit/internal/protocol"
-	"tunnel-suit/internal/report"
+	"tunnel-suite/internal/protocol"
+	"tunnel-suite/internal/report"
 )
 
 // TestThroughputEndToEnd runs the throughput speed test against a couple of

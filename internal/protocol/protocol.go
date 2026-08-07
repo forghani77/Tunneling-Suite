@@ -1,5 +1,5 @@
 // Package protocol defines the tunneling-protocol abstraction used by the
-// tunnel-suit test harness.
+// tunnel-suite test harness.
 //
 // Every protocol under test implements the Protocol interface, which provides
 // two sides:
@@ -42,7 +42,7 @@ func (k Kind) String() string {
 
 // defaultPassword is the well-known password for protocols that share a
 // secret (anytls, naive) when neither side sets --password.
-const defaultPassword = "tunnel-suit"
+const defaultPassword = "tunnel-suite"
 
 // Options carries per-run configuration shared by all protocols.
 type Options struct {

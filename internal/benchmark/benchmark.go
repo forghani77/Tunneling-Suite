@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"tunnel-suit/internal/protocol"
-	"tunnel-suit/internal/report"
+	"tunnel-suite/internal/protocol"
+	"tunnel-suite/internal/report"
 )
 
 // Config tunes the benchmark.

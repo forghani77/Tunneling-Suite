@@ -20,7 +20,7 @@ func TestSmtpInteropPythonServer(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer c.Close()
-	conn, err := smtpDialHandshake(c, "tunnel-suit")
+	conn, err := smtpDialHandshake(c, "tunnel-suite")
 	if err != nil {
 		t.Fatalf("handshake against python server failed: %v", err)
 	}
