@@ -14,10 +14,11 @@ import (
 // RFC 4193 ULA addresses.
 type sixToFourProto struct{}
 
-func (sixToFourProto) Name() string    { return "6to4" }
-func (sixToFourProto) Kind() Kind      { return KindDatagram }
-func (sixToFourProto) Overhead() int   { return 62 } // 20 outer IPv4 + 40 inner IPv6 + 2 tunnel id
-func (sixToFourProto) NeedsRoot() bool { return true }
+func (sixToFourProto) Name() string        { return "6to4" }
+func (sixToFourProto) Kind() Kind          { return KindDatagram }
+func (sixToFourProto) Overhead() int       { return 62 } // 20 outer IPv4 + 40 inner IPv6 + 2 tunnel id
+func (sixToFourProto) NeedsRoot() bool     { return true }
+func (sixToFourProto) IsRawDatagram() bool { return true }
 
 var sixFourCfg = rawConfig{
 	name:     "6to4",

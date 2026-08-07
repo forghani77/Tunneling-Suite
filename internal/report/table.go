@@ -207,7 +207,7 @@ func PrintThroughputTable(w io.Writer, results []ThroughputResult, sec float64, 
 		rows = append(rows, []string{r.Protocol, r.Kind, status, up, down, loss, data})
 
 		note := ""
-		if r.Error != "" || (r.Note != "" && r.Status != StatusOK) {
+		if r.Error != "" || r.Note != "" {
 			note = r.Error
 			if note == "" {
 				note = r.Note

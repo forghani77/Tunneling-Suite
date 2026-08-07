@@ -9,10 +9,11 @@ import (
 // a raw socket. Requires root/CAP_NET_RAW.
 type ipipProto struct{}
 
-func (ipipProto) Name() string    { return "ipip" }
-func (ipipProto) Kind() Kind      { return KindDatagram }
-func (ipipProto) Overhead() int   { return 42 } // 20 outer IP + 20 inner IP + 2 tunnel id
-func (ipipProto) NeedsRoot() bool { return true }
+func (ipipProto) Name() string        { return "ipip" }
+func (ipipProto) Kind() Kind          { return KindDatagram }
+func (ipipProto) Overhead() int       { return 42 } // 20 outer IP + 20 inner IP + 2 tunnel id
+func (ipipProto) NeedsRoot() bool     { return true }
+func (ipipProto) IsRawDatagram() bool { return true }
 
 var ipipCfg = rawConfig{
 	name:     "ipip",

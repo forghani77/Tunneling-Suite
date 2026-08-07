@@ -13,10 +13,11 @@ import (
 // written "6in4" / "ip6ip"); it is enabled with `ip tunnel add mode sit`.
 type sitProto struct{}
 
-func (sitProto) Name() string    { return "sit" }
-func (sitProto) Kind() Kind      { return KindDatagram }
-func (sitProto) Overhead() int   { return 62 } // 20 outer IPv4 + 40 inner IPv6 + 2 tunnel id
-func (sitProto) NeedsRoot() bool { return true }
+func (sitProto) Name() string        { return "sit" }
+func (sitProto) Kind() Kind          { return KindDatagram }
+func (sitProto) Overhead() int       { return 62 } // 20 outer IPv4 + 40 inner IPv6 + 2 tunnel id
+func (sitProto) NeedsRoot() bool     { return true }
+func (sitProto) IsRawDatagram() bool { return true }
 
 var sitCfg = rawConfig{
 	name:     "sit",

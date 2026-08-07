@@ -36,10 +36,11 @@ const (
 
 type icmp6Proto struct{}
 
-func (icmp6Proto) Name() string    { return "icmpv6" }
-func (icmp6Proto) Kind() Kind      { return KindDatagram }
-func (icmp6Proto) Overhead() int   { return 46 } // 40 outer IPv6 + 6 ICMPv6 (type/code/checksum/id)
-func (icmp6Proto) NeedsRoot() bool { return true }
+func (icmp6Proto) Name() string        { return "icmpv6" }
+func (icmp6Proto) Kind() Kind          { return KindDatagram }
+func (icmp6Proto) Overhead() int       { return 46 } // 40 outer IPv6 + 6 ICMPv6 (type/code/checksum/id)
+func (icmp6Proto) NeedsRoot() bool     { return true }
+func (icmp6Proto) IsRawDatagram() bool { return true }
 
 // ---------------------------------------------------------------------------
 // Raw IPv6 socket

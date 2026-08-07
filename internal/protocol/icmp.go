@@ -25,10 +25,11 @@ type icmpProto struct{}
 
 const ipProtoICMP = 1
 
-func (icmpProto) Name() string    { return "icmp" }
-func (icmpProto) Kind() Kind      { return KindDatagram }
-func (icmpProto) Overhead() int   { return 30 } // 20 outer IPv4 + 8 ICMP echo header + 2 tunnel id
-func (icmpProto) NeedsRoot() bool { return true }
+func (icmpProto) Name() string        { return "icmp" }
+func (icmpProto) Kind() Kind          { return KindDatagram }
+func (icmpProto) Overhead() int       { return 30 } // 20 outer IPv4 + 8 ICMP echo header + 2 tunnel id
+func (icmpProto) NeedsRoot() bool     { return true }
+func (icmpProto) IsRawDatagram() bool { return true }
 
 // ICMP echo message format:
 //

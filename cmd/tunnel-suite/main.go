@@ -255,7 +255,20 @@ func runClient(args []string) int {
 	}
 
 	if len(rep.Throughput) > 0 {
-		report.PrintThroughputTable(os.Stdout, rep.Throughput, *throughputSec, *throughputSize, !*noColor)
+		// Frame size as actually used: raw layer-3 protocols clamp it to the
+		// path MTU, so the configured value may not match what ran. With mixed
+		// raw + non-raw protocols the sizes differ; report the largest actual
+		// size, falling back to the configured value only if none ran.
+		effSize := 0
+		for _, r := range rep.Throughput {
+			if r.FrameSize > effSize {
+				effSize = r.FrameSize
+			}
+		}
+		if effSize == 0 {
+			effSize = *throughputSize
+		}
+		report.PrintThroughputTable(os.Stdout, rep.Throughput, *throughputSec, effSize, !*noColor)
 		report.PrintSummary(os.Stdout, rep.ThroughputSummary, !*noColor)
 	}
 

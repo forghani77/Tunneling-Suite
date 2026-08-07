@@ -60,6 +60,35 @@ type Options struct {
 	ClientIP net.IP
 }
 
+// rawDatagram marks the raw layer-3 protocols (gre, ipip, sit, 6to4, icmp,
+// icmpv6): they send every frame as a single unfragmented IP packet through a
+// raw socket. The kernel does not fragment raw-socket writes, so frames larger
+// than the path MTU fail at the sendmsg call (EMSGSIZE). Benchmark code uses
+// this to clamp throughput frames to a safe size over real networks.
+//
+// wireguard/amnezia/amnezia2/tap also need root but are NOT raw datagrams
+// (their frames ride real transport sockets and can be large), so NeedsRoot is
+// not sufficient — this marker exists to tell the two apart.
+type rawDatagram interface {
+	// IsRawDatagram reports whether the protocol sends frames as unfragmented
+	// raw IP packets.
+	IsRawDatagram() bool
+}
+
+// IsRawDatagram reports whether p sends every frame as a single unfragmented
+// raw IP packet. Used by the benchmark to clamp throughput frames to the path
+// MTU (see RawDatagramMaxFrame).
+func IsRawDatagram(p Protocol) bool {
+	rd, ok := p.(rawDatagram)
+	return ok && rd.IsRawDatagram()
+}
+
+// RawDatagramMaxFrame is the largest test frame a raw layer-3 protocol can
+// carry over a real network: the frame plus the protocol's own encapsulation
+// overhead (up to ~62 bytes for sit/6to4) must fit in the standard 1500-byte
+// path MTU.
+const RawDatagramMaxFrame = 1400
+
 // Tunnel is an established data channel between the test client and server.
 type Tunnel interface {
 	// WriteFrame writes one complete test frame.

@@ -341,11 +341,15 @@ sudo tunnel-suite client --server <server-ip> --base-port 10000 \
 > `wireguard-tools` (`wg`), and `/dev/net/tun` — otherwise they are reported
 > **skipped**.
 >
-> **Cross-machine note:** over a real network, raw protocols (`icmp`,
-> `icmpv6`, `gre`, `ipip`, `sit`) can only carry frames up to the path MTU
-> (raw sockets receive only the first IP fragment), so use
-> `--throughput-size 1400` for remote runs; `--throughput-size 60000` is
-> fine on loopback.
+> **Raw protocols and the MTU:** over a real network, raw layer-3 protocols
+> (`icmp`, `icmpv6`, `gre`, `ipip`, `sit`, `6to4`) send each frame as a
+> single **unfragmented** raw IP packet, so a frame larger than the path MTU
+> fails immediately at the socket (`sendmsg: message too long`). The client
+> now **auto-clamps** the throughput frame to 1400 bytes for these protocols
+> (the report notes it), so `--throughput-only gre` works out of the box;
+> `--throughput-size 1400` is what the clamp uses. `--throughput-size 60000`
+> still applies to everything else, and 60000-byte frames remain fine on
+> loopback.
 
 Because the server echoes, the test exercises both directions at once; on an
 asymmetric path the slower direction bounds both rates. Throughput results are

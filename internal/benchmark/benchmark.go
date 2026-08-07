@@ -4,6 +4,7 @@ package benchmark
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"sync/atomic"
 	"time"
@@ -204,6 +205,17 @@ func RunThroughput(p protocol.Protocol, addr string, opts protocol.Options, cfg 
 	if size <= 0 {
 		size = DefaultThroughputSize
 	}
+	// Raw layer-3 protocols (gre/ipip/sit/6to4/icmp/icmpv6) send each frame as
+	// one unfragmented raw IP packet: the kernel refuses writes larger than
+	// the path MTU (EMSGSIZE, "message too long"), which used to fail the
+	// default 60000-byte blast even though the protocol itself was fine. Clamp
+	// to a frame that fits in the standard 1500-byte MTU (including each
+	// protocol's own encapsulation overhead) and say so, instead of failing
+	// with a cryptic sendmsg error.
+	if size > protocol.RawDatagramMaxFrame && protocol.IsRawDatagram(p) {
+		size = protocol.RawDatagramMaxFrame
+		res.Note = fmt.Sprintf("frame clamped to %dB: raw sockets cannot exceed the path MTU", size)
+	}
 	res.FrameSize = size
 
 	tun, err := p.Dial(addr, opts)
@@ -259,9 +271,13 @@ func RunThroughput(p protocol.Protocol, addr string, opts protocol.Options, cfg 
 	// Writer: blasts frames until the deadline. Stream tunnels set one
 	// combined read+write deadline, so a write that blocks past it returns a
 	// deadline error — that is the normal end of the blast, not a failure.
+	// Tunnels that can only emulate deadlines (e.g. HTTP/2-stream based
+	// protocols) tear the connection down when the window ends, so an
+	// in-flight write wakes with a closed-connection error at/after the
+	// deadline; that is equally the normal end of the blast.
 	for time.Now().Before(deadline) {
 		if err := tun.WriteFrame(frame); err != nil {
-			if errors.Is(err, os.ErrDeadlineExceeded) {
+			if errors.Is(err, os.ErrDeadlineExceeded) || !time.Now().Before(deadline) {
 				break
 			}
 			res.Status = report.StatusFailed
