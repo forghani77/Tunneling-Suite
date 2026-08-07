@@ -729,7 +729,6 @@ systemd unit for the endpoint and start it at boot.`,
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp (must match server)")
 	f.StringVar(&throughput, "throughput", "", "comma-separated protocols to run a throughput speed test against (default: none)")
 	f.Var(throughputOnly, "throughput-only", "run only the throughput speed tests against the given protocols (skip the standard benchmark); accepts a list (--throughput-only=tcp,udp or --throughput-only tcp,udp) or bare to reuse the --throughput list")
-	f.Lookup("throughput-only").NoOptDefVal = "true"
 	f.Float64Var(&throughputSec, "throughput-time", 5, "throughput test duration (s)")
 	f.IntVar(&throughputSize, "throughput-size", benchmark.DefaultThroughputSize, "throughput frame size (bytes)")
 

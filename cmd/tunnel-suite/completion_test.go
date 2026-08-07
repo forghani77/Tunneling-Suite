@@ -117,6 +117,10 @@ func TestRunCompletion(t *testing.T) {
 		{name: "single dash install flag", argv: []string{"tunnel-suite", "__complete", "server", "-ins"}, wantHas: "-install\t", wantNot: "--install\t"},
 		{name: "bare single dash offers every flag single-dash", argv: []string{"tunnel-suite", "__complete", "client", "-"}, wantHas: "-base-port\t", wantNot: "--base-port\t"},
 		{name: "no-desc request also single-dash", argv: []string{"tunnel-suite", "__completeNoDesc", "client", "-pr"}, wantHas: "-protocol", wantNot: "--protocol"},
+		{name: "throughput-only completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-throughput-only", "any"}, wantHas: "anytls"},
+		{name: "throughput-only = form completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-throughput-only=gr"}, wantHas: "gre"},
+		{name: "mode completes forward and socks", argv: []string{"tunnel-suite", "__complete", "client", "-mode", "f"}, wantHas: "forward"},
+		{name: "protocol completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-protocol", "qu"}, wantHas: "quic"},
 	}
 	// Silence cobra's "Completion ended with directive" stderr diagnostic.
 	prevErr := rootCmd.ErrOrStderr()
