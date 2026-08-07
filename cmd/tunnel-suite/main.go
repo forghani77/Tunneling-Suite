@@ -8,8 +8,10 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -66,6 +68,10 @@ shell and enable tab-completion (commands, flags and protocol names).
 var errSilent = errors.New("silent exit")
 
 func main() {
+	// The token being completed, if this is a shell completion request — must
+	// be captured before normalizeArgs rewrites it, so the completion output
+	// can be rendered in the same dash style the user typed.
+	token := completionToken(os.Args)
 	// Legacy syntax --throughput-only <list> (space-separated list after the
 	// flag). Cobra/pflag, like the previous flag package, stops parsing at the
 	// first non-flag token, so rewrite the list into the =value form before
@@ -80,12 +86,84 @@ func main() {
 	// pflag accepts them; the previous flag package used single dashes, and
 	// some users still write them. Double-dash flags keep working as usual.
 	os.Args = normalizeArgs(os.Args)
+	if token != "" {
+		// Shell completion: render flag candidates in the dash style the user
+		// typed (-ins<TAB> offers -install; --ins<TAB> keeps offering
+		// --install), then exit without the normal error handling.
+		if err := runCompletion(token, os.Stdout); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	if err := rootCmd.Execute(); err != nil {
 		if err != errSilent {
 			fmt.Fprintln(os.Stderr, "error:", err)
 		}
 		os.Exit(1)
 	}
+}
+
+// completionToken reports the token a shell completion request is completing
+// (the last argument of a __complete / __completeNoDesc invocation), or ""
+// for ordinary invocations. Only argv[1] is considered the completion
+// command, matching how the shell scripts invoke it ("tunnel-suite
+// __complete <cmd-line>"), so a flag value that happens to be the string
+// "__complete" is never mistaken for a completion request.
+func completionToken(argv []string) string {
+	if len(argv) >= 3 && (argv[1] == cobra.ShellCompRequestCmd || argv[1] == cobra.ShellCompNoDescRequestCmd) {
+		return argv[len(argv)-1]
+	}
+	return ""
+}
+
+// runCompletion services a shell completion request. cobra always renders
+// flag candidates as "--flag"; rewriteCompletionFlags switches them to the
+// single-dash style when the token being completed uses one, so tab
+// completion offers the same style the user is typing. The completion output
+// (candidates + ":<directive>") goes to w; cobra's diagnostic line goes to
+// stderr, which the shell scripts ignore.
+func runCompletion(token string, w io.Writer) error {
+	prevOut := rootCmd.OutOrStdout()
+	defer rootCmd.SetOut(prevOut)
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	err := rootCmd.Execute()
+	if _, werr := w.Write(rewriteCompletionFlags(out.Bytes(), singleDashToken(token))); werr != nil && err == nil {
+		err = werr
+	}
+	return err
+}
+
+// singleDashToken reports whether the token being completed uses the
+// single-dash style ("-", "-ins"): it starts with a dash but not with "--".
+func singleDashToken(token string) bool {
+	return len(token) > 0 && token[0] == '-' && (len(token) == 1 || token[1] != '-')
+}
+
+// rewriteCompletionFlags converts flag candidates in a completion response to
+// the single-dash style ("--install" → "-install") when the user is
+// completing a single-dash token. Shells filter candidates against the typed
+// token (bash's compgen -W ... -- "$cur", zsh's _describe prefix matching)
+// or insert them verbatim (fish), so candidates must carry the same dash
+// style the user typed: -ins<TAB> must offer -install, and --ins<TAB> must
+// keep offering --install. Each candidate is a line; the trailing
+// ":<directive>" line and non-flag candidates (commands, protocol names,
+// values) never start with "--" and pass through unchanged.
+func rewriteCompletionFlags(b []byte, singleDash bool) []byte {
+	if !singleDash {
+		return b
+	}
+	lines := bytes.SplitAfter(b, []byte("\n"))
+	out := make([]byte, 0, len(b))
+	for _, line := range lines {
+		if bytes.HasPrefix(line, []byte("--")) {
+			out = append(out, '-')
+			out = append(out, line[2:]...)
+			continue
+		}
+		out = append(out, line...)
+	}
+	return out
 }
 
 // normalizeArgs rewrites single-dash long flags into their double-dash form
@@ -133,7 +211,13 @@ func normalizeSingleDash(args []string, cmd *cobra.Command, prefixMatch bool) []
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
+		// len(a) > 2: ordinary long flags. In completion mode a 2-char token
+		// like "-p" is also rewritten (cobra only completes long flag names
+		// for "--"-prefixed tokens, so "-p<TAB>" would otherwise find
+		// nothing) — but only when it is the token being completed (the last
+		// argument), never a completed argument like "-h " in "-h ''".
+		last := i == len(args)-1
+		if len(a) >= 2 && a[0] == '-' && a[1] != '-' && (len(a) > 2 || (prefixMatch && last)) {
 			name := a[1:]
 			eq := strings.IndexByte(name, '=')
 			if eq >= 0 {

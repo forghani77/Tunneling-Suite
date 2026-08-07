@@ -139,10 +139,22 @@ func TestNormalizeSingleDashPrefix(t *testing.T) {
 			want: []string{"__complete", "client", "-zzz", ""},
 		},
 		{
-			name: "short token untouched",
+			name: "short completed arg untouched (token is the empty arg)",
 			path: "client",
 			args: []string{"__complete", "client", "-h", ""},
 			want: []string{"__complete", "client", "-h", ""},
+		},
+		{
+			name: "1-char prefix token rewritten so long flags complete",
+			path: "client",
+			args: []string{"__complete", "client", "-p"},
+			want: []string{"__complete", "client", "--p"},
+		},
+		{
+			name: "2-char value token untouched",
+			path: "client",
+			args: []string{"__complete", "client", "-1", ""},
+			want: []string{"__complete", "client", "-1", ""},
 		},
 	}
 	for _, c := range cases {
