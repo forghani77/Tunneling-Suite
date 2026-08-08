@@ -273,7 +273,7 @@ func captureStdout(fn func()) string {
 	return string(b)
 }
 
-func TestUninstallAllInNames(t *testing.T) {
+func TestResolveUninstallUnitsIn(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name string) {
 		if err := os.WriteFile(filepath.Join(dir, name+".service"), []byte("Description=tunnel-suite\n"), 0o644); err != nil {
@@ -284,23 +284,89 @@ func TestUninstallAllInNames(t *testing.T) {
 	write("my-custom-tunnel")
 	write("renamed-bin")
 
-	// Dry-run with a specific name lists only that unit; the .service suffix
-	// is tolerated and duplicates collapse.
-	var runErr error
-	out := captureStdout(func() {
-		runErr = uninstallAllIn(installOpts{dryRun: true}, dir, []string{"my-custom-tunnel.service", "my-custom-tunnel"})
-	})
-	if runErr != nil {
-		t.Fatalf("uninstallAllIn: %v", runErr)
+	// No names: every tunnel-suite unit, sorted; other services untouched.
+	if err := os.WriteFile(filepath.Join(dir, "backhaul.service"), []byte("Description=backhaul\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(out, "would uninstall 1 tunnel-suite service(s): my-custom-tunnel") {
-		t.Errorf("dry-run output wrong:\n%s", out)
+	units, err := resolveUninstallUnitsIn(dir, nil)
+	if err != nil {
+		t.Fatalf("resolve all: %v", err)
+	}
+	if strings.Join(units, ",") != "my-custom-tunnel,renamed-bin,tunnel-suite-server" {
+		t.Errorf("all units = %v", units)
+	}
+
+	// Named with .service suffix tolerated and duplicates collapsed.
+	units, err = resolveUninstallUnitsIn(dir, []string{"my-custom-tunnel.service", "my-custom-tunnel"})
+	if err != nil {
+		t.Fatalf("resolve named: %v", err)
+	}
+	if strings.Join(units, ",") != "my-custom-tunnel" {
+		t.Errorf("named units = %v", units)
 	}
 
 	// An unknown name is rejected with a hint listing what is installed.
-	err := uninstallAllIn(installOpts{dryRun: true}, dir, []string{"nope"})
+	_, err = resolveUninstallUnitsIn(dir, []string{"nope"})
 	if err == nil || !strings.Contains(err.Error(), "no tunnel-suite service \"nope\" installed") || !strings.Contains(err.Error(), "installed: ") {
 		t.Errorf("unknown-name error = %v, want a hint about installed services", err)
+	}
+}
+
+func TestRemoveAllUnitsDryRun(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tunnel-suite-server.service"), []byte("tunnel-suite"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(func() {
+		if err := removeAllUnits(installOpts{dryRun: true}, dir, []string{"tunnel-suite-server"}); err != nil {
+			t.Fatalf("removeAllUnits dry-run: %v", err)
+		}
+	})
+	if !strings.Contains(out, "would uninstall 1 tunnel-suite service(s): tunnel-suite-server") ||
+		!strings.Contains(out, "systemctl disable --now tunnel-suite-server.service") {
+		t.Errorf("dry-run output wrong:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tunnel-suite-server.service")); err != nil {
+		t.Errorf("dry-run removed the unit file: %v", err)
+	}
+}
+
+func TestConfirm(t *testing.T) {
+	origRead, origTTY := stdinReadLine, stdinIsTerminal
+	defer func() { stdinReadLine, stdinIsTerminal = origRead, origTTY }()
+
+	// --dry-run and --yes skip the prompt entirely.
+	if err := confirm(installOpts{dryRun: true}, []string{"a"}); err != nil {
+		t.Errorf("dry-run confirm: %v", err)
+	}
+	if err := confirm(installOpts{yes: true}, []string{"a"}); err != nil {
+		t.Errorf("--yes confirm: %v", err)
+	}
+
+	// Non-terminal stdin without --yes fails closed instead of removing
+	// something unattended.
+	stdinIsTerminal = func() bool { return false }
+	if err := confirm(installOpts{}, []string{"a"}); err == nil || !strings.Contains(err.Error(), "not a terminal") {
+		t.Errorf("non-terminal confirm error = %v, want a 'not a terminal' hint", err)
+	}
+
+	// Interactive: y/yes (any case) proceed; anything else and EOF abort.
+	stdinIsTerminal = func() bool { return true }
+	for _, yes := range []string{"y\n", "yes\n", "Y\n"} {
+		stdinReadLine = func() (string, error) { return yes, nil }
+		if err := confirm(installOpts{}, []string{"a"}); err != nil {
+			t.Errorf("answer %q: %v", yes, err)
+		}
+	}
+	for _, no := range []string{"n\n", "\n", "maybe\n"} {
+		stdinReadLine = func() (string, error) { return no, nil }
+		if err := confirm(installOpts{}, []string{"a"}); err == nil {
+			t.Errorf("answer %q should abort", no)
+		}
+	}
+	stdinReadLine = func() (string, error) { return "", io.EOF }
+	if err := confirm(installOpts{}, []string{"a"}); err == nil {
+		t.Error("EOF should abort")
 	}
 }
 

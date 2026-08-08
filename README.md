@@ -340,15 +340,20 @@ protocol), the mode (`--mode forward|socks`) and the local port
 remove the service again.
 
 To remove services again, use the `uninstall` subcommand. It scans the unit
-directory for the services tunnel-suite installed and removes them:
+directory for the services tunnel-suite installed and **confirms before
+removing anything** (the services are listed and you answer y/N):
 
 ```sh
 sudo tunnel-suite uninstall                     # remove every tunnel-suite service
 sudo tunnel-suite uninstall tunnel-suite-server # remove just one (or more, by name)
+sudo tunnel-suite uninstall --yes               # skip the confirmation (scripts)
 tunnel-suite uninstall --user                   # per-user services instead
 sudo tunnel-suite uninstall --dry-run           # list what would be removed
 ```
 
+The confirmation lists exactly what will be removed; `--yes` (or `-y`)
+skips it for scripts, and when stdin is not a terminal the command fails
+closed and asks for `--yes` instead of removing anything unattended.
 Service names tab-complete from the ones actually installed
 (`tunnel-suite uninstall tunnel-s<TAB>`), the `.service` suffix is optional,
 and any name not installed is rejected with a hint of what is. Discovery is

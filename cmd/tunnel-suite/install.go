@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -53,6 +54,7 @@ type installOpts struct {
 	user      bool
 	dryRun    bool
 	uninstall bool
+	yes       bool
 	name      string
 	overall   string // "server" or "client"
 }
@@ -117,6 +119,7 @@ func uninstallCmd() *cobra.Command {
 	var (
 		user   bool
 		dryRun bool
+		yes    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "uninstall [name...]",
@@ -128,14 +131,20 @@ directory) for unit files that reference tunnel-suite. With no service names
 it removes them all: default names, custom --name units and renamed binaries
 alike. With names it removes only those — each must be an installed
 tunnel-suite service (tab-complete to pick from the installed ones); the
-.service suffix is optional. Other services are never touched. Add --dry-run
-to list what would be removed without changing anything.`,
+.service suffix is optional. Other services are never touched.
+
+Every removal is confirmed first (the services to be removed are listed and
+you answer y/N). Pass --yes to skip the prompt in scripts; add --dry-run to
+list what would be removed without changing anything. When stdin is not a
+terminal the command fails closed and asks for --yes instead of removing
+anything unattended.`,
 		Example: `  sudo tunnel-suite uninstall
   sudo tunnel-suite uninstall tunnel-suite-server my-custom-tunnel
+  sudo tunnel-suite uninstall --yes
   tunnel-suite uninstall --user
   sudo tunnel-suite uninstall --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return uninstallAll(installOpts{user: user, dryRun: dryRun}, args)
+			return uninstallAll(installOpts{user: user, dryRun: dryRun, yes: yes}, args)
 		},
 		// Tab-complete the names of the installed tunnel-suite services in
 		// the requested scope, so `uninstall tunnel-s<TAB>` offers the units
@@ -155,6 +164,7 @@ to list what would be removed without changing anything.`,
 	f := cmd.Flags()
 	f.BoolVar(&user, "user", false, "remove per-user tunnel-suite services (no root)")
 	f.BoolVar(&dryRun, "dry-run", false, "list what would be removed without changing anything")
+	f.BoolVarP(&yes, "yes", "y", false, "remove without confirmation (for scripts)")
 	return cmd
 }
 
@@ -201,34 +211,55 @@ func findTunnelSuiteUnits(dir string) ([]string, error) {
 	return names, nil
 }
 
-// uninstallAll resolves the unit directory for the chosen scope, applies the
-// same environment checks as installing (systemctl present, root for system
-// services) and delegates to uninstallAllIn.
+// uninstallAll removes the requested tunnel-suite services — every one found
+// when no names are given, exactly those otherwise. A destructive removal is
+// confirmed first (see confirm): it never runs unattended without --yes.
 func uninstallAll(o installOpts, names []string) error {
-	dir, err := unitDir(o)
+	dir, units, err := resolveUninstallUnits(o, names)
 	if err != nil {
 		return err
 	}
+	if len(units) == 0 {
+		fmt.Printf("no tunnel-suite systemd services installed in %s\n", dir)
+		return nil
+	}
+	if err := confirm(o, units); err != nil {
+		return err
+	}
+	// Only after confirmation: systemctl must exist, and removing system
+	// services needs root (dry-run already passed through confirm, so the
+	// checks are skipped there as before).
 	if err := requireSystemdEnv(o, "just list the units"); err != nil {
 		return err
 	}
-	return uninstallAllIn(o, dir, names)
+	return removeAllUnits(o, dir, units)
 }
 
-// uninstallAllIn removes tunnel-suite units in dir. With names, only those
-// units are removed and each must be installed (the .service suffix is
-// tolerated); with no names, every tunnel-suite unit found is removed.
-func uninstallAllIn(o installOpts, dir string, names []string) error {
+// resolveUninstallUnits resolves the unit directory for the chosen scope and
+// the final list of units to remove: every tunnel-suite unit found, or — when
+// names are given — exactly those, each validated against what is installed
+// (the .service suffix is tolerated and duplicates collapse).
+func resolveUninstallUnits(o installOpts, names []string) (string, []string, error) {
+	dir, err := unitDir(o)
+	if err != nil {
+		return "", nil, err
+	}
+	units, err := resolveUninstallUnitsIn(dir, names)
+	return dir, units, err
+}
+
+// resolveUninstallUnitsIn is resolveUninstallUnits against a known directory.
+func resolveUninstallUnitsIn(dir string, names []string) ([]string, error) {
 	installed, err := findTunnelSuiteUnits(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(names) > 0 {
 		var want []string
 		for _, n := range names {
 			n = strings.TrimSuffix(n, ".service")
 			if !slices.Contains(installed, n) {
-				return fmt.Errorf("no tunnel-suite service %q installed in %s%s", n, dir, installedHint(installed))
+				return nil, fmt.Errorf("no tunnel-suite service %q installed in %s%s", n, dir, installedHint(installed))
 			}
 			if !slices.Contains(want, n) {
 				want = append(want, n)
@@ -236,16 +267,49 @@ func uninstallAllIn(o installOpts, dir string, names []string) error {
 		}
 		installed = want
 	}
-	if len(installed) == 0 {
-		fmt.Printf("no tunnel-suite systemd services installed in %s\n", dir)
-		return nil
-	}
+	return installed, nil
+}
+
+// removeAllUnits prints what will be removed and removes them.
+func removeAllUnits(o installOpts, dir string, units []string) error {
 	action := "uninstall"
 	if o.dryRun {
 		action = "would uninstall"
 	}
-	fmt.Printf("%s %d tunnel-suite service(s): %s\n", action, len(installed), strings.Join(installed, ", "))
-	return removeUnits(o, dir, installed)
+	fmt.Printf("%s %d tunnel-suite service(s): %s\n", action, len(units), strings.Join(units, ", "))
+	return removeUnits(o, dir, units)
+}
+
+// stdinReadLine and stdinIsTerminal are injectable for tests.
+var (
+	stdinReadLine   = func() (string, error) { return bufio.NewReader(os.Stdin).ReadString('\n') }
+	stdinIsTerminal = func() bool {
+		fi, err := os.Stdin.Stat()
+		return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	}
+)
+
+// confirm asks the user to confirm a destructive removal. --dry-run (nothing
+// would change) and --yes skip it. When stdin is not a terminal and no --yes
+// was given, the run fails closed: an unattended removal must not proceed
+// without explicit consent. Any answer other than y/yes aborts the run.
+func confirm(o installOpts, units []string) error {
+	if o.dryRun || o.yes {
+		return nil
+	}
+	if !stdinIsTerminal() {
+		return fmt.Errorf("stdin is not a terminal — pass --yes to remove %d service(s) without prompting", len(units))
+	}
+	fmt.Printf("Remove %d tunnel-suite service(s): %s? [y/N] ", len(units), strings.Join(units, ", "))
+	line, err := stdinReadLine()
+	if err != nil {
+		return fmt.Errorf("no answer received — aborting (nothing removed)")
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return nil
+	}
+	return fmt.Errorf("aborted — nothing removed")
 }
 
 // installedHint renders the list of installed service names for an error
