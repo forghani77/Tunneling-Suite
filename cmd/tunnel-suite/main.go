@@ -82,14 +82,14 @@ func main() {
 	if len(os.Args) >= 2 && os.Args[1] == "client" {
 		os.Args = append(os.Args[:2], expandThroughputOnlyList(os.Args[2:])...)
 	}
-	// Single-dash long flags: rewrite -install → --install (and friends) so
+	// Single-dash long flags: rewrite -forward → --forward (and friends) so
 	// pflag accepts them; the previous flag package used single dashes, and
 	// some users still write them. Double-dash flags keep working as usual.
 	os.Args = normalizeArgs(os.Args)
 	if token != "" {
 		// Shell completion: render flag candidates in the dash style the user
-		// typed (-ins<TAB> offers -install; --ins<TAB> keeps offering
-		// --install), then exit without the normal error handling.
+		// typed (-for<TAB> offers -forward; --for<TAB> keeps offering
+		// --forward), then exit without the normal error handling.
 		if err := runCompletion(token, os.Stdout); err != nil {
 			os.Exit(1)
 		}
@@ -141,12 +141,12 @@ func singleDashToken(token string) bool {
 }
 
 // rewriteCompletionFlags converts flag candidates in a completion response to
-// the single-dash style ("--install" → "-install") when the user is
+// the single-dash style ("--forward" → "-forward") when the user is
 // completing a single-dash token. Shells filter candidates against the typed
 // token (bash's compgen -W ... -- "$cur", zsh's _describe prefix matching)
 // or insert them verbatim (fish), so candidates must carry the same dash
-// style the user typed: -ins<TAB> must offer -install, and --ins<TAB> must
-// keep offering --install. Each candidate is a line; the trailing
+// style the user typed: -for<TAB> must offer -forward, and --for<TAB> must
+// keep offering --forward. Each candidate is a line; the trailing
 // ":<directive>" line and non-flag candidates (commands, protocol names,
 // values) never start with "--" and pass through unchanged.
 func rewriteCompletionFlags(b []byte, singleDash bool) []byte {
@@ -167,9 +167,9 @@ func rewriteCompletionFlags(b []byte, singleDash bool) []byte {
 }
 
 // normalizeArgs rewrites single-dash long flags into their double-dash form
-// for the invoked command (and its subcommands), so "-install", "-server H"
+// for the invoked command (and its subcommands), so "-forward", "-server H"
 // and "-protocol=tcp" work exactly like their "--" equivalents. pflag reads
-// a single dash as shorthand clusters, so a bare "-install" would otherwise
+// a single dash as shorthand clusters, so a bare "-forward" would otherwise
 // be rejected as an unknown shorthand. Tokens are rewritten only when the
 // text after "-" matches a known flag name, which leaves flag values alone
 // (e.g. "-0.5", "-1"). Double-dash flags keep working as usual.
@@ -204,7 +204,7 @@ func normalizeArgs(argv []string) []string {
 // normalizeSingleDash rewrites "-<flag>" tokens of cmd (or any of its
 // subcommands) to "--<flag>"; everything else is passed through unchanged.
 // The token right after a value-taking flag is that flag's value and is never
-// rewritten (so "--password -install" keeps "-install" as the password).
+// rewritten (so "--password -blind" keeps "-blind" as the password).
 // With prefixMatch (used for cobra's completion requests) a single-dash token
 // that prefixes a known flag name is rewritten too, so "-pr<TAB>" completes
 // like "--protocol".
@@ -236,7 +236,7 @@ func normalizeSingleDash(args []string, cmd *cobra.Command, prefixMatch bool) []
 			}
 		} else if len(a) > 2 && strings.HasPrefix(a, "--") {
 			// Double-dash value-taking flag: protect its value token from
-			// single-dash rewriting (e.g. "--password -install").
+			// single-dash rewriting (e.g. "--password -blind").
 			name := a[2:]
 			eq := strings.IndexByte(name, '=')
 			if eq >= 0 {
@@ -397,7 +397,7 @@ func init() {
 	// registered independently, so dynamic completion keeps working).
 	rootCmd.AddCommand(completionCmd())
 	rootCmd.AddCommand(installCmd())
-	// Render help/usage with single-dash long flags (-install, -server H),
+	// Render help/usage with single-dash long flags (-forward, -server H),
 	// matching the input style the CLI accepts (--flag stays valid too).
 	installSingleDashHelp(rootCmd)
 }
@@ -412,13 +412,6 @@ func serverCmd() *cobra.Command {
 		ssPass    string
 		password  string
 		forward   bool
-
-		// Install mode: write a systemd unit for this command line and exit
-		// (the full-featured form is `tunnel-suite install server`).
-		install   bool
-		uninstall bool
-		user      bool
-		dryRun    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "server",
@@ -432,34 +425,12 @@ protocols that share a secret (ipsec, l2tp, anytls, naive, shadowsocks).
 
 Relay is on by default: the server also relays real TCP traffic for
 "tunnel-suite client --mode forward|socks" (echo testing keeps working). Pass
--forward=false to run a pure test/echo server. Add --install to instead write
-a systemd unit for this command line and start it.`,
+-forward=false to run a pure test/echo server. To run the server as a systemd
+service, use the install server subcommand.`,
 		Example: `  tunnel-suite server --listen 0.0.0.0 --base-port 10000
   tunnel-suite server --protocols tcp,udp,vxlan,kcp --base-port 20000
-  tunnel-suite server --forward --install`,
+  tunnel-suite install server --forward`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Install mode: build the unit from the very flags on this command
-			// line (minus --install) and let writeUnit handle --user / --dry-run
-			// / --uninstall, then exit without running.
-			if install || uninstall {
-				o := installOpts{user: user, dryRun: dryRun, uninstall: uninstall, name: "tunnel-suite-server", overall: "server"}
-				if err := validateServerProtocols(protocols); err != nil {
-					return err
-				}
-				// Installed servers enable relay by default, matching
-				// `install server`; --forward=false opts out explicitly.
-				fwd := true
-				if cmd.Flags().Changed("forward") {
-					fwd = forward
-				}
-				exe, err := os.Executable()
-				if err != nil || exe == "" {
-					return fmt.Errorf("cannot determine the binary path (os.Executable)")
-				}
-				argsStr := serverExecArgs(exe, listen, basePort, fwd, protocols, password, ssPass, cert, key)
-				unit := unitTemplate("tunnel-suite server (test + forwarding server)", strings.Join(argsStr, " "), user)
-				return writeUnit(o, unit)
-			}
 			return server.Run(server.Config{
 				Listen:      listen,
 				BasePort:    basePort,
@@ -482,10 +453,6 @@ a systemd unit for this command line and start it.`,
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password (must match client)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp (must match client)")
 	f.BoolVar(&forward, "forward", true, "enable relay sessions for 'tunnel-suite client --mode forward|socks' (on by default; -forward=false disables)")
-	f.BoolVar(&install, "install", false, "write a systemd unit for this command line, enable it and exit (needs root unless --user; the installed server enables relay by default)")
-	f.BoolVar(&uninstall, "uninstall", false, "stop and remove the installed systemd unit for this command")
-	f.BoolVar(&user, "user", false, "with --install/--uninstall: use the per-user systemd scope (no root, starts at login)")
-	f.BoolVar(&dryRun, "dry-run", false, "with --install/--uninstall: print the unit and commands without changing anything")
 	_ = cmd.RegisterFlagCompletionFunc("protocols", completeProtocol)
 	return cmd
 }
@@ -518,13 +485,6 @@ func clientCmd() *cobra.Command {
 		fwdRemoteHost string
 		fwdRemotePort int
 		fwdProtocol   string
-
-		// Install mode: write a systemd unit for the forwarding endpoint and
-		// exit (the full-featured form is `tunnel-suite install client`).
-		install   bool
-		uninstall bool
-		user      bool
-		dryRun    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "client",
@@ -544,8 +504,8 @@ speed tests with --throughput-only:
 bare --throughput-only reuses the --throughput list.
 
 With --mode the client becomes a persistent tunnel endpoint instead of
-running the benchmark (see --mode forward|socks). Add --install to write a
-systemd unit for the endpoint and start it at boot.
+running the benchmark (see --mode forward|socks). To run the endpoint as a
+systemd service, use the install client subcommand.
 
 The client normally talks to the server's control port (base+0, TCP) to
 fetch its protocol manifest. If that port is filtered — e.g. the server sits
@@ -561,38 +521,8 @@ fully blocked.`,
   tunnel-suite client --server 203.0.113.10 --throughput tcp,udp,kcp --throughput-time 10
   tunnel-suite client --server 203.0.113.10 --throughput-only vxlan-gpe --throughput-size 1400
   tunnel-suite client --server HOST --protocol tcp --mode forward \
-    --local-port 8080 --remote-host 10.0.0.5 --remote-port 80 --install`,
+    --local-port 8080 --remote-host 10.0.0.5 --remote-port 80`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Install mode: build the unit from the very forwarding flags on
-			// this command line (minus --install) and let writeUnit handle
-			// --user / --dry-run / --uninstall, then exit without running.
-			// Runs before the --server check so `client --uninstall` works
-			// without re-supplying any endpoint flags.
-			if install || uninstall {
-				o := installOpts{user: user, dryRun: dryRun, uninstall: uninstall, name: "tunnel-suite-client", overall: "client"}
-				if !uninstall {
-					if err := validateClientInstall(serverHost, fwdProtocol, fwdMode, fwdLocalPort, fwdRemoteHost, fwdRemotePort); err != nil {
-						fmt.Fprintln(os.Stderr, "error:", err)
-						_ = cmd.Usage()
-						return errSilent
-					}
-				}
-				exe, err := os.Executable()
-				if err != nil || exe == "" {
-					return fmt.Errorf("cannot determine the binary path (os.Executable)")
-				}
-				argsStr := clientExecArgs(exe, serverHost, basePort, fwdProtocol, fwdMode, fwdBind, fwdLocalPort, fwdRemoteHost, fwdRemotePort, password, ssPass)
-				desc := "tunnel-suite client"
-				if !uninstall {
-					desc = fmt.Sprintf("tunnel-suite %s client (%s tunnel)", fwdMode, fwdProtocol)
-				} else {
-					// --uninstall ignores the unit content; render a clean one for
-					// --dry-run instead of one full of empty flag values.
-					argsStr = []string{quoteArg(exe), "client"}
-				}
-				unit := unitTemplate(desc, strings.Join(argsStr, " "), user)
-				return writeUnit(o, unit)
-			}
 			// Forwarding mode: the client becomes a tunnel endpoint (port
 			// forward or SOCKS5 proxy) instead of running the benchmark.
 			if fwdMode != "" {
@@ -745,13 +675,6 @@ fully blocked.`,
 	f.IntVar(&fwdLocalPort, "local-port", 0, "local listen port for forwarding mode")
 	f.StringVar(&fwdRemoteHost, "remote-host", "", "remote destination host for 'forward' mode")
 	f.IntVar(&fwdRemotePort, "remote-port", 0, "remote destination port for 'forward' mode")
-
-	// Install mode flags (used with --install; the endpoint then runs as a
-	// systemd service instead of in the foreground).
-	f.BoolVar(&install, "install", false, "write a systemd unit for this forwarding endpoint, enable it and exit (needs root unless --user)")
-	f.BoolVar(&uninstall, "uninstall", false, "stop and remove the installed systemd unit for this command")
-	f.BoolVar(&user, "user", false, "with --install/--uninstall: use the per-user systemd scope (no root, starts at login)")
-	f.BoolVar(&dryRun, "dry-run", false, "with --install/--uninstall: print the unit and commands without changing anything")
 
 	for _, name := range []string{"protocols", "throughput", "throughput-only"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, completeProtocol)

@@ -37,8 +37,8 @@ func TestNormalizeSingleDash(t *testing.T) {
 		{
 			name: "server flags",
 			path: "server",
-			args: []string{"server", "-install", "-dry-run", "-forward"},
-			want: []string{"server", "--install", "--dry-run", "--forward"},
+			args: []string{"server", "-listen", "127.0.0.1", "-forward"},
+			want: []string{"server", "--listen", "127.0.0.1", "--forward"},
 		},
 		{
 			name: "equals form",
@@ -49,8 +49,8 @@ func TestNormalizeSingleDash(t *testing.T) {
 		{
 			name: "double dash untouched",
 			path: "client",
-			args: []string{"client", "--server", "H", "--install"},
-			want: []string{"client", "--server", "H", "--install"},
+			args: []string{"client", "--server", "H", "--json"},
+			want: []string{"client", "--server", "H", "--json"},
 		},
 		{
 			name: "short help flag untouched",
@@ -85,20 +85,20 @@ func TestNormalizeSingleDash(t *testing.T) {
 		{
 			name: "value after double-dash flag is protected",
 			path: "client",
-			args: []string{"client", "--password", "-install", "--install"},
-			want: []string{"client", "--password", "-install", "--install"},
+			args: []string{"client", "--password", "-blind", "--blind"},
+			want: []string{"client", "--password", "-blind", "--blind"},
 		},
 		{
 			name: "value after single-dash flag is protected",
 			path: "client",
-			args: []string{"client", "-server", "-user"},
-			want: []string{"client", "--server", "-user"},
+			args: []string{"client", "-server", "-blind"},
+			want: []string{"client", "--server", "-blind"},
 		},
 		{
 			name: "equals form needs no value token",
 			path: "client",
-			args: []string{"client", "-server=H", "-install"},
-			want: []string{"client", "--server=H", "--install"},
+			args: []string{"client", "-server=H", "-blind"},
+			want: []string{"client", "--server=H", "--blind"},
 		},
 	}
 	for _, c := range cases {
@@ -180,8 +180,8 @@ func TestNormalizeArgs(t *testing.T) {
 		},
 		{
 			name: "server invocation",
-			argv: []string{"tunnel-suite", "server", "-install", "-dry-run"},
-			want: []string{"tunnel-suite", "server", "--install", "--dry-run"},
+			argv: []string{"tunnel-suite", "server", "-listen", "127.0.0.1", "-forward"},
+			want: []string{"tunnel-suite", "server", "--listen", "127.0.0.1", "--forward"},
 		},
 		{
 			name: "bare invocation untouched",
@@ -211,29 +211,5 @@ func TestNormalizeArgs(t *testing.T) {
 				t.Errorf("got  %v\nwant %v", got, c.want)
 			}
 		})
-	}
-}
-
-// TestClientInstallSingleDash runs the client install-mode branch with
-// single-dash flags (normalized the way main() normalizes argv) and checks
-// the unit still renders.
-func TestClientInstallSingleDash(t *testing.T) {
-	argv := normalizeArgs([]string{"tunnel-suite", "client",
-		"-server", "H", "-protocol", "tcp", "-mode", "forward",
-		"-local-port", "8080", "-remote-host", "10.0.0.5", "-remote-port", "80",
-		"-install", "-dry-run"})
-	cmd := clientCmd()
-	cmd.SilenceErrors = true
-	cmd.SilenceUsage = true
-	cmd.SetArgs(argv[2:])
-	out := captureStdout(t, func() {
-		if err := cmd.Execute(); err != nil {
-			t.Fatalf("Execute() error = %v", err)
-		}
-	})
-	for _, s := range []string{"install client service", "ExecStart=", "--protocol tcp --mode forward --bind 127.0.0.1 --local-port 8080 --remote-host 10.0.0.5 --remote-port 80"} {
-		if !strings.Contains(out, s) {
-			t.Errorf("output missing %q:\n%s", s, out)
-		}
 	}
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // installSingleDashHelp makes help and usage output render long flags with a
-// single dash (-install, -server H) instead of the "--flag" spelling pflag
+// single dash (-forward, -server H) instead of the "--flag" spelling pflag
 // always emits. Both styles remain valid on the command line — this only
 // changes what the help menu shows, for consistency with the input style.
 //

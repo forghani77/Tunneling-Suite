@@ -16,7 +16,7 @@ func TestCompletionToken(t *testing.T) {
 		want string
 	}{
 		{name: "completion request", argv: []string{"tunnel-suite", "__complete", "client", "-pr"}, want: "-pr"},
-		{name: "no-desc completion request", argv: []string{"tunnel-suite", "__completeNoDesc", "server", "-ins"}, want: "-ins"},
+		{name: "no-desc completion request", argv: []string{"tunnel-suite", "__completeNoDesc", "server", "-for"}, want: "-for"},
 		{name: "completion with trailing empty arg", argv: []string{"tunnel-suite", "__complete", "client", "-pr", ""}, want: ""},
 		{name: "bare completion request with no args", argv: []string{"tunnel-suite", "__complete"}, want: ""},
 		{name: "ordinary invocation", argv: []string{"tunnel-suite", "client", "-server", "H"}, want: ""},
@@ -33,7 +33,7 @@ func TestCompletionToken(t *testing.T) {
 }
 
 func TestRewriteCompletionFlags(t *testing.T) {
-	const resp = "--install\twrite a systemd unit and exit\n--uninstall\tstop and remove\ntcp\tstream protocol\n:4\n"
+	const resp = "--server\tvalue\n--blind\tbool flag\ntcp\tstream protocol\n:4\n"
 	cases := []struct {
 		name  string
 		input string
@@ -44,7 +44,7 @@ func TestRewriteCompletionFlags(t *testing.T) {
 			name:  "single-dash token rewrites flag candidates only",
 			input: resp,
 			sd:    true,
-			want:  "-install\twrite a systemd unit and exit\n-uninstall\tstop and remove\ntcp\tstream protocol\n:4\n",
+			want:  "-server\tvalue\n-blind\tbool flag\ntcp\tstream protocol\n:4\n",
 		},
 		{
 			name:  "double-dash token leaves output untouched",
@@ -54,9 +54,9 @@ func TestRewriteCompletionFlags(t *testing.T) {
 		},
 		{
 			name:  "no trailing newline still rewritten",
-			input: "--install",
+			input: "--server",
 			sd:    true,
-			want:  "-install",
+			want:  "-server",
 		},
 		{
 			name:  "empty input",
@@ -114,7 +114,7 @@ func TestRunCompletion(t *testing.T) {
 	}{
 		{name: "single dash token offers single dash", argv: []string{"tunnel-suite", "__complete", "client", "-pr"}, wantHas: "-protocol\t", wantNot: "--protocol\t"},
 		{name: "double dash token keeps double dash", argv: []string{"tunnel-suite", "__complete", "client", "--pr"}, wantHas: "--protocol\t", wantNot: "-protocol\t"},
-		{name: "single dash install flag", argv: []string{"tunnel-suite", "__complete", "server", "-ins"}, wantHas: "-install\t", wantNot: "--install\t"},
+		{name: "single dash forward flag", argv: []string{"tunnel-suite", "__complete", "server", "-for"}, wantHas: "-forward\t", wantNot: "--forward\t"},
 		{name: "bare single dash offers every flag single-dash", argv: []string{"tunnel-suite", "__complete", "client", "-"}, wantHas: "-base-port\t", wantNot: "--base-port\t"},
 		{name: "no-desc request also single-dash", argv: []string{"tunnel-suite", "__completeNoDesc", "client", "-pr"}, wantHas: "-protocol", wantNot: "--protocol"},
 		{name: "throughput-only completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-throughput-only", "any"}, wantHas: "anytls"},

@@ -209,9 +209,9 @@ JSON report written to report-20260806-...json
 ### Flag style
 
 Long flags accept either a single or a double dash — `-server H`, `-protocol
-tcp`, `-install` are the same as `--server H`, `--protocol tcp`, `--install`.
+tcp`, `-blind` are the same as `--server H`, `--protocol tcp`, `--blind`.
 The generated help and shell tab-completion render the single-dash form
-(`-ins<TAB>` offers `-install`; typing `--ins<TAB>` still offers `--install`).
+(`-for<TAB>` offers `-forward`; typing `--for<TAB>` still offers `--forward`).
 The examples below use the conventional double-dash spelling.
 
 ### Server
@@ -225,9 +225,6 @@ tunnel-suite server [flags]
   --ss-password string Shadowsocks password (must match the client)
   --password string    shared secret for anytls/naive (must match the client)
   --forward            enable relay sessions for client --mode forward|socks
-  --install            install this command line as a systemd service, then exit
-  --uninstall          stop and remove the installed systemd service
-  --user, --dry-run    per-user scope / preview without touching the system
 ```
 
 ### Client
@@ -264,9 +261,6 @@ tunnel-suite client [flags]
   --local-port int    local listen port for forwarding mode
   --remote-host/--remote-port
                       destination for --mode forward
-  --install           install this command line as a systemd service, then exit
-  --uninstall         stop and remove the installed systemd service
-  --user, --dry-run   per-user scope / preview without touching the system
 ```
 
 ### Shell completion
@@ -322,37 +316,30 @@ application (e.g. `curl --socks5-hostname 127.0.0.1:1080 ...`).
 
 ### Installing as a systemd service
 
-Add `--install` to the `server` or `client` command to write a systemd unit
-for exactly that command line and start it with `systemctl enable --now`
-(needs root; add `--user` for a per-user service, `--dry-run` to preview the
-unit without touching the system, `--uninstall` to stop and remove it):
-
-```sh
-sudo tunnel-suite server --install                       # serve all protocols
-sudo tunnel-suite client --server HOST --protocol tcp --mode forward \
-  --local-port 8080 --remote-host 10.0.0.5 --remote-port 80 --install
-tunnel-suite server --install --dry-run                  # preview only
-```
-
-In client install mode the tunnel protocol (`--protocol`, any supported
-protocol), the mode (`--mode forward|socks`) and the local port
-(`--local-port`) are required; the installed server enables relay by default.
-The full-featured equivalent is the `install` subcommand, which adds a custom
-unit name and lets `--uninstall` work without re-supplying the endpoint
-flags:
+Use the `install` subcommand to write a systemd unit and start it with
+`systemctl enable --now` (needs root; add `--user` for a per-user service,
+`--dry-run` to preview the unit without touching the system):
 
 ```sh
 sudo tunnel-suite install server --base-port 20000
 sudo tunnel-suite install client --server HOST --protocol tcp \
   --mode forward --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
+tunnel-suite install server --dry-run                    # preview only
 tunnel-suite install client --uninstall                  # just the unit name
 ```
 
+`install server` writes a unit that runs the server with relay enabled by
+default. For the client, the tunnel protocol (`--protocol`, any supported
+protocol), the mode (`--mode forward|socks`) and the local port
+(`--local-port`) are required. `--name` sets a custom systemd unit name;
+`--uninstall` only needs that name, so the endpoint flags are not required to
+remove the service again.
+
 #### System vs `--user` services
 
-Both `--install` and `install server|client` write a systemd unit and start
-it with `systemctl enable --now`. Without `--user` the unit is a **system**
-service; with `--user` it becomes a **per-user** service:
+`install server` and `install client` write a systemd unit and start it with
+`systemctl enable --now`. Without `--user` the unit is a **system** service;
+with `--user` it becomes a **per-user** service:
 
 |                        | system (default)                   | `--user`                            |
 |------------------------|------------------------------------|-------------------------------------|

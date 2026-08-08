@@ -46,8 +46,8 @@ func TestHelpRendersSingleDash(t *testing.T) {
 	// no flags (they live on its subcommands), so only the no-double-dash
 	// assertion applies there.
 	perCommandFlags := map[string][]string{
-		"client":         {"-server", "-install", "-base-port", "-local-port"},
-		"server":         {"-listen", "-base-port", "-install", "-forward"},
+		"client":         {"-server", "-blind", "-base-port", "-local-port"},
+		"server":         {"-listen", "-base-port", "-forward"},
 		"install":        nil,
 		"install client": {"-server", "-mode", "-local-port", "-uninstall"},
 	}

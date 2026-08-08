@@ -18,10 +18,6 @@ import (
 // enables it. --dry-run prints everything without touching the system;
 // --user installs into the per-user systemd scope; --uninstall removes the
 // unit again.
-//
-// `tunnel-suite server --install` and `tunnel-suite client ... --install`
-// are the quick-path equivalents on the run commands themselves; both share
-// the unit rendering and installOpts machinery in this file.
 func installCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
@@ -36,14 +32,10 @@ the tunnel protocol (any of the %d supported protocols), the mode ('forward'
 for a fixed remote destination, 'socks' for a local SOCKS5 proxy) and the
 local listen port.
 
-The same installs are available directly on the run commands:
-  tunnel-suite server --install
-  tunnel-suite client --server HOST --protocol tcp --mode forward \
-    --local-port 8080 --remote-host 10.0.0.5 --remote-port 80 --install
-
 System units need root; pass --user for a per-user service (no root, starts
 at login). Add --dry-run to print the unit and commands without changing
-anything.`, len(protocol.Names())),
+anything. Add --name for a custom systemd unit name; --uninstall then only
+needs that name.`, len(protocol.Names())),
 	}
 	cmd.AddCommand(installServerCmd())
 	cmd.AddCommand(installClientCmd())
@@ -191,8 +183,8 @@ func quoteArg(s string) string {
 	return s
 }
 
-// serverExecArgs builds the ExecStart argv for the server from its flags
-// (without --install). Used both by `install server` and `server --install`.
+// serverExecArgs builds the ExecStart argv for the server from its flags.
+// Used by `install server`.
 func serverExecArgs(exe, listen string, basePort int, forward bool, protocols, password, ssPass, cert, key string) []string {
 	args := []string{quoteArg(exe), "server",
 		"--listen", quoteArg(listen),
@@ -216,8 +208,7 @@ func serverExecArgs(exe, listen string, basePort int, forward bool, protocols, p
 }
 
 // clientExecArgs builds the ExecStart argv for a forwarding client from its
-// flags (without --install). Used both by `install client` and
-// `client --install`.
+// flags. Used by `install client`.
 func clientExecArgs(exe, server string, basePort int, protocol, mode, bind string, localPort int, remoteHost string, remotePort int, password, ssPass string) []string {
 	args := []string{quoteArg(exe), "client",
 		"--server", quoteArg(server),
