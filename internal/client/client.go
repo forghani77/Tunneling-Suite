@@ -195,6 +195,10 @@ func fetchManifest(cfg Config) (map[string]manifestEntry, net.IP, error) {
 	defer c.Close()
 	clientIP := c.LocalAddr().(*net.TCPAddr).IP
 
+	// Bound the manifest read too: a service squatting on the control port
+	// that accepts TCP but never answers would otherwise hang the client
+	// forever.
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := fmt.Fprintf(c, "{\"op\":\"manifest\"}\n"); err != nil {
 		return nil, nil, err
 	}

@@ -41,6 +41,13 @@ const (
 	wgServerIP = "10.9.0.1"
 	wgClientIP = "10.9.0.2"
 	wgPrefix   = "wgts" // interface name prefix (kept short for IFNAMSIZ=15)
+
+	// wgControlTimeout bounds the whole client key exchange (TCP connect +
+	// read) and each server-side handshake read. A peer that accepts TCP but
+	// never speaks the protocol — e.g. an unrelated service squatting on the
+	// control port, or a blind-mode probe of an absent protocol — must not
+	// hang the dial or stall the accept loop forever.
+	wgControlTimeout = 10 * time.Second
 )
 
 // wgServerInfo is exchanged over the control connection during setup.
@@ -223,6 +230,10 @@ func (s *wgServer) Accept() (Tunnel, error) {
 
 // acceptClient runs the key exchange for a single control connection.
 func (s *wgServer) acceptClient(c net.Conn) (Tunnel, error) {
+	// Bound the handshake (same pattern as the smtp protocol): a peer that
+	// connects and never sends a line must not stall the accept loop for
+	// every other client.
+	_ = c.SetDeadline(time.Now().Add(wgControlTimeout))
 	line, err := bufio.NewReader(c).ReadString('\n')
 	if err != nil {
 		return nil, fmt.Errorf("read client pubkey: %w", err)
@@ -311,10 +322,15 @@ func (wgProto) Dial(addr string, opts Options) (Tunnel, error) {
 	udpPort := wgPortOffset(ctlPort)
 
 	// 1. Control connection: exchange keys.
-	c, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	c, err := net.DialTimeout("tcp", addr, wgControlTimeout)
 	if err != nil {
 		return nil, err
 	}
+	// Bound the key exchange (same pattern as the smtp protocol): a service
+	// squatting on the control port that accepts TCP but never sends the
+	// server info would otherwise hang the dial forever (the benchmark's
+	// per-protocol budget only starts after Dial returns).
+	_ = c.SetDeadline(time.Now().Add(wgControlTimeout))
 	priv, pub, err := wgKeypair()
 	if err != nil {
 		_ = c.Close()
@@ -327,7 +343,7 @@ func (wgProto) Dial(addr string, opts Options) (Tunnel, error) {
 	var info wgServerInfo
 	if err := json.NewDecoder(c).Decode(&info); err != nil {
 		_ = c.Close()
-		return nil, err
+		return nil, fmt.Errorf("key exchange failed (is another service on this port?): %w", err)
 	}
 	_ = c.Close()
 
