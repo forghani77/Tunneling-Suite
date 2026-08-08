@@ -515,6 +515,7 @@ func clientCmd() *cobra.Command {
 		noColor        bool
 		ssPass         string
 		password       string
+		blind          bool
 		throughput     string
 		throughputOnly = &throughputOnlyFlag{}
 		throughputSec  float64
@@ -555,7 +556,13 @@ bare --throughput-only reuses the --throughput list.
 
 With --mode the client becomes a persistent tunnel endpoint instead of
 running the benchmark (see --mode forward|socks). Add --install to write a
-systemd unit for the endpoint and start it at boot.`,
+systemd unit for the endpoint and start it at boot.
+
+The client normally talks to the server's control port (base+0, TCP) to
+fetch its protocol manifest. If that port is filtered — e.g. the server sits
+behind a firewall that blocks TCP — pass --blind to skip the control port
+and probe every protocol directly against its standard base-port offset:
+unreachable protocols then show as failed dials instead of "not offered".`,
 		Example: `  tunnel-suite client --server 203.0.113.10 --base-port 10000
   tunnel-suite client --server 203.0.113.10 --protocols tcp,tls,quic --pings 100
   tunnel-suite client --server 203.0.113.10 --throughput tcp,udp,kcp --throughput-time 10
@@ -634,6 +641,7 @@ systemd unit for the endpoint and start it at boot.`,
 				ThroughputOnly: throughputOnly.enabled,
 				SSPassword:     ssPass,
 				Password:       password,
+				Blind:          blind,
 				Config: benchmark.Config{
 					Pings:          pings,
 					RTTSize:        rttSize,
@@ -653,6 +661,9 @@ systemd unit for the endpoint and start it at boot.`,
 			}
 
 			fmt.Printf("tunnel-suite client → server %s (base port %d)\n", serverHost, basePort)
+			if blind {
+				fmt.Println("blind mode: probing protocols directly (control port skipped — assumes the standard base-port offsets)")
+			}
 			// Banner lists only what this run will actually test.
 			if throughputOnly.enabled {
 				if len(throughputList) == 0 {
@@ -727,6 +738,7 @@ systemd unit for the endpoint and start it at boot.`,
 	f.BoolVar(&noColor, "no-color", false, "disable ANSI colors")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password (must match server)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp (must match server)")
+	f.BoolVar(&blind, "blind", false, "probe every protocol directly, skipping the server's TCP control port (for servers behind a firewall that filters TCP)")
 	f.StringVar(&throughput, "throughput", "", "comma-separated protocols to run a throughput speed test against (default: none)")
 	f.Var(throughputOnly, "throughput-only", "run only the throughput speed tests against the given protocols (skip the standard benchmark); accepts a list (--throughput-only=tcp,udp or --throughput-only tcp,udp) or bare to reuse the --throughput list")
 	f.Float64Var(&throughputSec, "throughput-time", 5, "throughput test duration (s)")

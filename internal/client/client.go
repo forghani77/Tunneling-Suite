@@ -22,6 +22,13 @@ type Config struct {
 	Protocols  []string // empty means every protocol the server offers
 	SSPassword string
 	Password   string // shared secret for anytls / naive
+	// Blind skips the server's control port (the TCP manifest port). The
+	// server may sit behind a firewall that filters TCP on the control port,
+	// so instead of fetching the manifest every known protocol is probed
+	// directly against its well-known port offset. Reachability is whatever
+	// the probe reports: protocols the server does not run surface as failed
+	// dials instead of "not offered".
+	Blind bool
 	// Throughput lists the protocols to run an additional throughput speed
 	// test against (empty means no speed test). ThroughputOnly skips the
 	// standard benchmark and runs only those speed tests.
@@ -41,7 +48,7 @@ type manifestEntry struct {
 
 // Run executes the benchmark suite and returns the full report.
 func Run(cfg Config) (*report.Report, error) {
-	entries, clientIP, err := fetchManifest(cfg)
+	entries, clientIP, err := protocolEntries(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +160,28 @@ func ipString(ip net.IP) string {
 		return ""
 	}
 	return ip.String()
+}
+
+// protocolEntries returns the set of protocols to test plus the client's
+// observed IP. Normally it fetches the server's manifest over the control
+// port; in blind mode (server behind a firewall filtering the TCP control
+// port) it instead probes every known protocol directly against its
+// well-known port offset, marking each as available.
+func protocolEntries(cfg Config) (map[string]manifestEntry, net.IP, error) {
+	if !cfg.Blind {
+		return fetchManifest(cfg)
+	}
+	m := make(map[string]manifestEntry, len(protocol.All()))
+	for _, p := range protocol.All() {
+		m[p.Name()] = manifestEntry{
+			Name:      p.Name(),
+			Port:      protocol.PortOffset(p),
+			Kind:      p.Kind().String(),
+			NeedsRoot: p.NeedsRoot(),
+			Available: true,
+		}
+	}
+	return m, nil, nil
 }
 
 // fetchManifest queries the server's control port for its protocol manifest
