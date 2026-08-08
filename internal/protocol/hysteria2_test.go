@@ -43,6 +43,23 @@ func TestHysteria2RoundTrip(t *testing.T) {
 	}
 }
 
+// TestHysteria2Bandwidth pins the Brutal rate conversion: 0 (the default)
+// means no fixed rate — the bandwidth negotiation stays zero and both ends
+// run the adaptive BBR controller, matching real Hysteria2. A configured
+// Mbps value becomes bytes/second for the BandwidthConfig both ends
+// negotiate.
+func TestHysteria2Bandwidth(t *testing.T) {
+	if got := hysteria2Bandwidth(Options{}); got != 0 {
+		t.Fatalf("default bandwidth = %d, want 0 (BBR adaptive)", got)
+	}
+	if got := hysteria2Bandwidth(Options{Hysteria2Bandwidth: 200}); got != 25_000_000 {
+		t.Fatalf("200 Mbps = %d B/s, want 25000000", got)
+	}
+	if got := hysteria2Bandwidth(Options{Hysteria2Bandwidth: 1000}); got != 125_000_000 {
+		t.Fatalf("1000 Mbps = %d B/s, want 125000000", got)
+	}
+}
+
 // TestHysteria2WrongPassword verifies a peer without the token cannot even
 // complete the QUIC handshake: the Salamander PSK derives from the password,
 // so every packet a wrong-token peer sends is obfuscated with the wrong key

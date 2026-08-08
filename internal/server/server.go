@@ -32,6 +32,9 @@ type Config struct {
 	TLSKeyFile  string
 	SSPassword  string
 	Password    string // shared secret for anytls / naive
+	// Hysteria2Bandwidth caps the hysteria2 protocol's Brutal send rate in
+	// Mbps (0 = no cap: the client's requested rate, or the BBR default).
+	Hysteria2Bandwidth int
 	// Forward enables relay sessions: a client sending a FrameForwardDial is
 	// dialed out to the requested target and its bytes relayed (the data
 	// plane used by "tunnel-suite client --mode forward|socks"). Without it
@@ -58,10 +61,11 @@ func Run(cfg Config) error {
 		cfg.Listen = "0.0.0.0"
 	}
 	opts := protocol.Options{
-		SSPassword:  cfg.SSPassword,
-		Password:    cfg.Password,
-		TLSCertFile: cfg.TLSCertFile,
-		TLSKeyFile:  cfg.TLSKeyFile,
+		SSPassword:         cfg.SSPassword,
+		Password:           cfg.Password,
+		TLSCertFile:        cfg.TLSCertFile,
+		TLSKeyFile:         cfg.TLSKeyFile,
+		Hysteria2Bandwidth: cfg.Hysteria2Bandwidth,
 	}
 
 	protos, err := selectProtocols(cfg.Protocols)

@@ -34,6 +34,7 @@ func TestServerExecArgs(t *testing.T) {
 		forward             bool
 		protocols, password string
 		ss, cert, key       string
+		hy2Bw               int
 		want                string
 	}{{
 		name:              "defaults with relay on",
@@ -84,10 +85,18 @@ func TestServerExecArgs(t *testing.T) {
 			password:          "with space",
 			want:              `/opt/bin/tunnel-suite server --listen 0.0.0.0 --protocols-base-port 10000 --forward --password "with space"`,
 		},
+		{
+			name:              "hysteria2 bandwidth cap",
+			listen:            "0.0.0.0",
+			protocolsBasePort: 10000,
+			forward:           true,
+			hy2Bw:             500,
+			want:              "/opt/bin/tunnel-suite server --listen 0.0.0.0 --protocols-base-port 10000 --forward --hysteria2-bandwidth 500",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := strings.Join(serverExecArgs("/opt/bin/tunnel-suite", c.listen, c.protocolsBasePort, c.controlPort, c.forward, c.protocols, c.password, c.ss, c.cert, c.key), " ")
+			got := strings.Join(serverExecArgs("/opt/bin/tunnel-suite", c.listen, c.protocolsBasePort, c.controlPort, c.hy2Bw, c.forward, c.protocols, c.password, c.ss, c.cert, c.key), " ")
 			if got != c.want {
 				t.Errorf("got  %q\nwant %q", got, c.want)
 			}
@@ -106,6 +115,7 @@ func TestClientExecArgs(t *testing.T) {
 		remoteHost           string
 		remotePort           int
 		password, ss         string
+		hy2Bw                int
 		want                 string
 	}{
 		{
@@ -155,10 +165,21 @@ func TestClientExecArgs(t *testing.T) {
 			remotePort:        11612,
 			want:              "/opt/bin/tunnel-suite client --server HOST --protocols-base-port 11580 --control-port 11606 --tunnel-protocol smtp --mode forward --bind 0.0.0.0 --local-port 2060 --remote-host 127.0.0.1 --remote-port 11612",
 		},
+		{
+			name:              "hysteria2 brutal rate",
+			server:            "HOST",
+			protocolsBasePort: 10000,
+			protocol:          "hysteria2",
+			mode:              "socks",
+			bind:              "127.0.0.1",
+			localPort:         1080,
+			hy2Bw:             300,
+			want:              "/opt/bin/tunnel-suite client --server HOST --protocols-base-port 10000 --tunnel-protocol hysteria2 --mode socks --bind 127.0.0.1 --local-port 1080 --hysteria2-bandwidth 300",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := strings.Join(clientExecArgs("/opt/bin/tunnel-suite", c.server, c.protocolsBasePort, c.controlPort, c.protocol, c.mode, c.bind, c.localPort, c.remoteHost, c.remotePort, c.password, c.ss), " ")
+			got := strings.Join(clientExecArgs("/opt/bin/tunnel-suite", c.server, c.protocolsBasePort, c.controlPort, c.hy2Bw, c.protocol, c.mode, c.bind, c.localPort, c.remoteHost, c.remotePort, c.password, c.ss), " ")
 			if got != c.want {
 				t.Errorf("got  %q\nwant %q", got, c.want)
 			}

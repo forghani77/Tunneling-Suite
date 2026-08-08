@@ -413,6 +413,7 @@ func serverCmd() *cobra.Command {
 		key               string
 		ssPass            string
 		password          string
+		hy2Bandwidth      int
 		forward           bool
 	)
 	cmd := &cobra.Command{
@@ -438,15 +439,16 @@ service, use the install server subcommand.`,
   tunnel-suite install server --forward`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return server.Run(server.Config{
-				Listen:            listen,
-				ProtocolsBasePort: protocolsBasePort,
-				ControlPort:       controlPort,
-				Protocols:         splitCSV(protocols),
-				TLSCertFile:       cert,
-				TLSKeyFile:        key,
-				SSPassword:        ssPass,
-				Password:          password,
-				Forward:           forward,
+				Listen:             listen,
+				ProtocolsBasePort:  protocolsBasePort,
+				ControlPort:        controlPort,
+				Protocols:          splitCSV(protocols),
+				TLSCertFile:        cert,
+				TLSKeyFile:         key,
+				SSPassword:         ssPass,
+				Password:           password,
+				Hysteria2Bandwidth: hy2Bandwidth,
+				Forward:            forward,
 			})
 		},
 	}
@@ -460,6 +462,7 @@ service, use the install server subcommand.`,
 	f.StringVar(&key, "key", "", "TLS key file")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password (must match client)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp/noise/trojan/shadowtls/hysteria2 (must match client)")
+	f.IntVar(&hy2Bandwidth, "hysteria2-bandwidth", 0, "cap on the client's requested Brutal rate for hysteria2 in Mbps (0 = no cap: the client's rate, or adaptive BBR when the client sets none)")
 	f.BoolVar(&forward, "forward", true, "enable relay sessions for 'tunnel-suite client --mode forward|socks' (on by default; -forward=false disables)")
 	_ = cmd.RegisterFlagCompletionFunc("protocols", completeProtocol)
 	return cmd
@@ -480,6 +483,7 @@ func clientCmd() *cobra.Command {
 		noColor           bool
 		ssPass            string
 		password          string
+		hy2Bandwidth      int
 		blind             bool
 		throughput        string
 		throughputOnly    = &throughputOnlyFlag{}
@@ -547,17 +551,18 @@ fully blocked.`,
 					return errSilent
 				}
 				return client.RunForward(client.ForwardConfig{
-					Server:            serverHost,
-					ProtocolsBasePort: protocolsBasePort,
-					ControlPort:       controlPort,
-					Protocol:          fwdProtocol,
-					Password:          password,
-					SSPassword:        ssPass,
-					Mode:              fwdMode,
-					Bind:              fwdBind,
-					LocalPort:         fwdLocalPort,
-					RemoteHost:        fwdRemoteHost,
-					RemotePort:        fwdRemotePort,
+					Server:             serverHost,
+					ProtocolsBasePort:  protocolsBasePort,
+					ControlPort:        controlPort,
+					Protocol:           fwdProtocol,
+					Password:           password,
+					SSPassword:         ssPass,
+					Hysteria2Bandwidth: hy2Bandwidth,
+					Mode:               fwdMode,
+					Bind:               fwdBind,
+					LocalPort:          fwdLocalPort,
+					RemoteHost:         fwdRemoteHost,
+					RemotePort:         fwdRemotePort,
 				})
 			}
 			// Effective throughput list: --throughput-only's own list wins;
@@ -568,15 +573,16 @@ fully blocked.`,
 			}
 
 			cfg := client.Config{
-				Server:            serverHost,
-				ProtocolsBasePort: protocolsBasePort,
-				ControlPort:       controlPort,
-				Protocols:         splitCSV(protocols),
-				Throughput:        throughputList,
-				ThroughputOnly:    throughputOnly.enabled,
-				SSPassword:        ssPass,
-				Password:          password,
-				Blind:             blind,
+				Server:             serverHost,
+				ProtocolsBasePort:  protocolsBasePort,
+				ControlPort:        controlPort,
+				Protocols:          splitCSV(protocols),
+				Throughput:         throughputList,
+				ThroughputOnly:     throughputOnly.enabled,
+				SSPassword:         ssPass,
+				Password:           password,
+				Hysteria2Bandwidth: hy2Bandwidth,
+				Blind:              blind,
 				Config: benchmark.Config{
 					Pings:          pings,
 					RTTSize:        rttSize,
@@ -678,6 +684,7 @@ fully blocked.`,
 	f.BoolVar(&noColor, "no-color", false, "disable ANSI colors")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password (must match server)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp/noise/trojan/shadowtls/hysteria2 (must match server)")
+	f.IntVar(&hy2Bandwidth, "hysteria2-bandwidth", 0, "fixed Brutal send rate for hysteria2 in Mbps (0 = adaptive BBR, the Hysteria2 default)")
 	f.BoolVar(&blind, "blind", false, "probe every protocol directly, skipping the server's TCP control port and the wireguard/amnezia/amnezia2 TCP key exchange (for servers behind a firewall that filters TCP)")
 	f.StringVar(&throughput, "throughput", "", "comma-separated protocols to run a throughput speed test against (default: none)")
 	f.Var(throughputOnly, "throughput-only", "run only the throughput speed tests against the given protocols (skip the standard benchmark); accepts a list (--throughput-only=tcp,udp or --throughput-only tcp,udp) or bare to reuse the --throughput list")

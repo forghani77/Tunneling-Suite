@@ -455,7 +455,7 @@ func quoteArg(s string) string {
 // serverExecArgs builds the ExecStart argv for the server from its flags.
 // Used by `install server`. The control port is only written when set (the
 // server's zero default is the protocols base port).
-func serverExecArgs(exe, listen string, protocolsBasePort, controlPort int, forward bool, protocols, password, ssPass, cert, key string) []string {
+func serverExecArgs(exe, listen string, protocolsBasePort, controlPort, hysteria2Bandwidth int, forward bool, protocols, password, ssPass, cert, key string) []string {
 	args := []string{quoteArg(exe), "server",
 		"--listen", quoteArg(listen),
 		"--protocols-base-port", fmt.Sprintf("%d", protocolsBasePort)}
@@ -474,6 +474,9 @@ func serverExecArgs(exe, listen string, protocolsBasePort, controlPort int, forw
 	if ssPass != "" {
 		args = append(args, "--ss-password", quoteArg(ssPass))
 	}
+	if hysteria2Bandwidth > 0 {
+		args = append(args, "--hysteria2-bandwidth", fmt.Sprintf("%d", hysteria2Bandwidth))
+	}
 	if cert != "" {
 		args = append(args, "--cert", quoteArg(cert), "--key", quoteArg(key))
 	}
@@ -484,7 +487,7 @@ func serverExecArgs(exe, listen string, protocolsBasePort, controlPort int, forw
 // flags. Used by `install client`. The control port is only written when set:
 // it makes the client discover the tunnel port from the server's manifest
 // instead of computing protocols-base-port + offset.
-func clientExecArgs(exe, server string, protocolsBasePort, controlPort int, protocol, mode, bind string, localPort int, remoteHost string, remotePort int, password, ssPass string) []string {
+func clientExecArgs(exe, server string, protocolsBasePort, controlPort, hysteria2Bandwidth int, protocol, mode, bind string, localPort int, remoteHost string, remotePort int, password, ssPass string) []string {
 	args := []string{quoteArg(exe), "client",
 		"--server", quoteArg(server),
 		"--protocols-base-port", fmt.Sprintf("%d", protocolsBasePort)}
@@ -504,6 +507,9 @@ func clientExecArgs(exe, server string, protocolsBasePort, controlPort int, prot
 	}
 	if ssPass != "" {
 		args = append(args, "--ss-password", quoteArg(ssPass))
+	}
+	if hysteria2Bandwidth > 0 {
+		args = append(args, "--hysteria2-bandwidth", fmt.Sprintf("%d", hysteria2Bandwidth))
 	}
 	return args
 }
@@ -554,6 +560,7 @@ func installServerCmd() *cobra.Command {
 		forward           bool
 		password          string
 		ssPass            string
+		hy2Bandwidth      int
 		cert              string
 		key               string
 		protocols         string
@@ -576,7 +583,7 @@ func installServerCmd() *cobra.Command {
 			if err != nil || exe == "" {
 				return fmt.Errorf("cannot determine the binary path (os.Executable)")
 			}
-			argsStr := serverExecArgs(exe, listen, protocolsBasePort, controlPort, forward, protocols, password, ssPass, cert, key)
+			argsStr := serverExecArgs(exe, listen, protocolsBasePort, controlPort, hy2Bandwidth, forward, protocols, password, ssPass, cert, key)
 			unit := unitTemplate("tunnel-suite server (test + forwarding server)",
 				strings.Join(argsStr, " "), o.user)
 			return writeUnit(o, unit)
@@ -594,6 +601,7 @@ func installServerCmd() *cobra.Command {
 	f.StringVar(&protocols, "protocols", "", "comma-separated protocol subset to serve (default: all)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp/noise/trojan/shadowtls/hysteria2")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password")
+	f.IntVar(&hy2Bandwidth, "hysteria2-bandwidth", 0, "fixed Brutal send rate for hysteria2 in Mbps (0 = adaptive BBR)")
 	f.StringVar(&cert, "cert", "", "TLS certificate file")
 	f.StringVar(&key, "key", "", "TLS key file")
 	_ = cmd.RegisterFlagCompletionFunc("protocols", completeProtocol)
@@ -614,6 +622,7 @@ func installClientCmd() *cobra.Command {
 		remotePort        int
 		password          string
 		ssPass            string
+		hy2Bandwidth      int
 	)
 	cmd := &cobra.Command{
 		Use:   "client",
@@ -655,7 +664,7 @@ remove the service again.`,
 			if err != nil || exe == "" {
 				return fmt.Errorf("cannot determine the binary path (os.Executable)")
 			}
-			argsStr := clientExecArgs(exe, server, protocolsBasePort, controlPort, protocol, mode, bind, localPort, remoteHost, remotePort, password, ssPass)
+			argsStr := clientExecArgs(exe, server, protocolsBasePort, controlPort, hy2Bandwidth, protocol, mode, bind, localPort, remoteHost, remotePort, password, ssPass)
 			desc := fmt.Sprintf("tunnel-suite %s client (%s tunnel)", mode, protocol)
 			if o.uninstall {
 				// --uninstall ignores the unit content; render a clean one for
@@ -683,6 +692,7 @@ remove the service again.`,
 	f.IntVar(&remotePort, "remote-port", 0, "remote destination port (forward mode)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp/noise/trojan/shadowtls/hysteria2")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password")
+	f.IntVar(&hy2Bandwidth, "hysteria2-bandwidth", 0, "fixed Brutal send rate for hysteria2 in Mbps (0 = adaptive BBR)")
 	_ = cmd.RegisterFlagCompletionFunc("tunnel-protocol", completeProtocol)
 	_ = cmd.RegisterFlagCompletionFunc("mode", completeMode)
 	return cmd

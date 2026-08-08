@@ -208,18 +208,20 @@ Notes:
   (`github.com/apernet/hysteria/core/v2`): a full HTTP/3 session over QUIC
   where the client authenticates with a POST to a fixed URL and every
   connection becomes a bidirectional QUIC stream. On top of plain QUIC it
-  adds two of the Hysteria2 toolkit's layers: **Salamander** packet
-  obfuscation (each UDP datagram carries an 8-byte random salt and its
-  payload is XORed with `BLAKE2b-256(PSK || salt)`, erasing the QUIC
-  magic-byte fingerprint) and **Brutal** congestion control (both ends pace
-  the tunnel at a fixed 200 Mbps regardless of loss). The Salamander PSK
-  and the auth payload both derive from `--password`, so a peer without the
-  token cannot even complete the QUIC handshake — every packet it sends is
-  obfuscated with the wrong key and the server discards it, so a port scan
-  finds a dead port. It runs over plain UDP with no separate control plane,
-  so it works unchanged in `--blind` mode; because Brutal is a fixed-rate
-  sender, `-throughput` results for it are bounded by the configured rate by
-  design.
+  adds the **Salamander** packet obfuscation layer (each UDP datagram
+  carries an 8-byte random salt and its payload is XORed with
+  `BLAKE2b-256(PSK || salt)`, erasing the QUIC magic-byte fingerprint). The
+  Salamander PSK and the auth payload both derive from `--password`, so a
+  peer without the token cannot even complete the QUIC handshake — every
+  packet it sends is obfuscated with the wrong key and the server discards
+  it, so a port scan finds a dead port. Congestion control matches real
+  Hysteria2: by default both ends run the **adaptive BBR** controller and
+  ramp to the available link speed, so throughput tests measure the
+  protocol's true ceiling; pass `--hysteria2-bandwidth` (Mbps) on the client
+  to engage the **Brutal** fixed-rate sender at that rate on both ends (the
+  server caps it with its own value when set) — the right tool for lossy
+  paths where TCP-style backoff collapses. It runs over plain UDP with no
+  separate control plane, so it works unchanged in `--blind` mode.
 - If a protocol can't start (no privileges, no module), the server reports it
   unavailable and the client marks it **skipped** with the reason.
 - `bip`, `h3`, `ss`, `wg`, `awg`/`amneziawg`, `awg2`, `l2tap`/`l2`,
@@ -284,6 +286,9 @@ tunnel-suite server [flags]
   --ss-password string Shadowsocks password (must match the client)
   --password string    shared secret for anytls/naive/ipsec/l2tp/noise/trojan/
                        shadowtls/hysteria2 (must match the client)
+  --hysteria2-bandwidth int
+                       fixed Brutal send rate for hysteria2 in Mbps
+                       (0 = adaptive BBR, the Hysteria2 default)
   --forward            enable relay sessions for client --mode forward|socks
 ```
 
@@ -305,6 +310,9 @@ tunnel-suite client [flags]
   --ss-password string Shadowsocks password (must match the server)
   --password string    shared secret for anytls/naive/ipsec/l2tp/noise/trojan/
                        shadowtls/hysteria2 (must match the server)
+  --hysteria2-bandwidth int
+                       fixed Brutal send rate for hysteria2 in Mbps
+                       (0 = adaptive BBR, the Hysteria2 default)
   --throughput string  comma-separated protocols to run a throughput speed
                        test against (default: none)
   --throughput-only [list]

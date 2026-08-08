@@ -29,6 +29,9 @@ type Config struct {
 	Protocols   []string // empty means every protocol the server offers
 	SSPassword  string
 	Password    string // shared secret for anytls / naive
+	// Hysteria2Bandwidth requests a fixed Brutal send rate for the hysteria2
+	// protocol in Mbps (0 = adaptive BBR, the real Hysteria2 default).
+	Hysteria2Bandwidth int
 	// Blind skips the server's control port (the TCP manifest port). The
 	// server may sit behind a firewall that filters TCP on the control port,
 	// so instead of fetching the manifest every known protocol is probed
@@ -80,10 +83,11 @@ func Run(cfg Config) (*report.Report, error) {
 	}
 
 	opts := protocol.Options{
-		SSPassword: cfg.SSPassword,
-		Password:   cfg.Password,
-		ClientIP:   clientIP,
-		Blind:      cfg.Blind,
+		SSPassword:         cfg.SSPassword,
+		Password:           cfg.Password,
+		ClientIP:           clientIP,
+		Blind:              cfg.Blind,
+		Hysteria2Bandwidth: cfg.Hysteria2Bandwidth,
 	}
 
 	results := make([]report.Result, 0, len(protos))

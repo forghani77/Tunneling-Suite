@@ -31,11 +31,14 @@ type ForwardConfig struct {
 	Protocol    string // tunnel protocol name (e.g. "tcp", "udp", "ws", ...)
 	Password    string
 	SSPassword  string
-	Mode        string // "forward" (fixed target) or "socks" (SOCKS5 proxy)
-	Bind        string // local bind address, default "127.0.0.1"
-	LocalPort   int
-	RemoteHost  string // forward mode only
-	RemotePort  int    // forward mode only
+	// Hysteria2Bandwidth requests a fixed Brutal send rate for the hysteria2
+	// tunnel protocol in Mbps (0 = adaptive BBR, the real Hysteria2 default).
+	Hysteria2Bandwidth int
+	Mode               string // "forward" (fixed target) or "socks" (SOCKS5 proxy)
+	Bind               string // local bind address, default "127.0.0.1"
+	LocalPort          int
+	RemoteHost         string // forward mode only
+	RemotePort         int    // forward mode only
 }
 
 // RunForward runs the forwarding endpoint until killed. It listens on the
@@ -66,8 +69,9 @@ func RunForward(cfg ForwardConfig) error {
 	}
 	addr := net.JoinHostPort(cfg.Server, strconv.Itoa(port))
 	opts := protocol.Options{
-		Password:   cfg.Password,
-		SSPassword: cfg.SSPassword,
+		Password:           cfg.Password,
+		SSPassword:         cfg.SSPassword,
+		Hysteria2Bandwidth: cfg.Hysteria2Bandwidth,
 	}
 
 	ln, err := net.Listen("tcp", net.JoinHostPort(cfg.Bind, strconv.Itoa(cfg.LocalPort)))

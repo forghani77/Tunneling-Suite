@@ -18,15 +18,19 @@ import (
 // full HTTP/3 session over QUIC — the client authenticates with a POST to a
 // fixed URL, then every connection becomes a bidirectional QUIC stream. On
 // the wire it is QUIC-shaped (which itself defeats TCP fingerprinting), with
-// two extra layers from the Hysteria2 toolkit:
+// the Salamander obfuscation layer from the Hysteria2 toolkit: every UDP
+// datagram carries an 8-byte random salt prepended and its payload XORed
+// with BLAKE2b-256(PSK || salt), which removes the QUIC magic-byte
+// fingerprint so the stream does not even look like QUIC. The PSK is derived
+// from --password.
 //
-//   - Salamander obfuscation: every UDP datagram carries an 8-byte random
-//     salt prepended and its payload XORed with BLAKE2b-256(PSK || salt),
-//     which removes the QUIC magic-byte fingerprint so the stream does not
-//     even look like QUIC. The PSK is derived from --password.
-//   - Brutal congestion control: both ends are wired to a fixed-rate sender
-//     (hysteria2BrutalRate) that ignores loss signals and paces the tunnel at
-//     that rate, the "brutal" congestion control Hysteria2 is known for.
+// Congestion control matches real Hysteria2 exactly: by default (no
+// --hysteria2-bandwidth) both ends run the adaptive BBR controller and ramp
+// to the available link speed — the high-performance default the protocol is
+// known for. Passing --hysteria2-bandwidth on the client engages the Brutal
+// fixed-rate sender at that many Mbps on both ends (the server caps it with
+// its own value when set), which is what real deployments do when they want
+// a guaranteed bandwidth on lossy paths.
 //
 // Both ends are keyed purely from --password and there is no separate control
 // plane, so like the other QUIC/UDP protocols it works unchanged in --blind
@@ -48,12 +52,6 @@ const (
 	// handshake-idle timeout (~5s) normally fires first and cleans up, so this
 	// only catches pathological cases.
 	hysteria2DialTimeout = 15 * time.Second
-	// hysteria2BrutalRate is the fixed send rate Brutal paces the tunnel at,
-	// in bytes per second (200 Mbps). Both the client's upload and the
-	// server's echo direction are paced at this rate, so throughput results
-	// are bounded by it by design — that is what Brutal does: send at exactly
-	// the configured rate regardless of loss.
-	hysteria2BrutalRate = 200 * 1000 * 1000 / 8
 	// hysteria2SNI is the TLS server name both ends use; the client skips
 	// certificate validation (self-signed harness cert), so this is cosmetic.
 	hysteria2SNI = "tunnel-suite"
@@ -64,6 +62,18 @@ func hysteria2Password(opts Options) string {
 		return opts.Password
 	}
 	return defaultPassword
+}
+
+// hysteria2Bandwidth returns the fixed Brutal send rate in bytes per second
+// (Mbps as configured), or 0 when unset. 0 is the real Hysteria2 default:
+// the bandwidth negotiation then leaves both ends on the adaptive BBR
+// controller, which ramps to the available link speed instead of a fixed
+// rate.
+func hysteria2Bandwidth(opts Options) uint64 {
+	if opts.Hysteria2Bandwidth <= 0 {
+		return 0
+	}
+	return uint64(opts.Hysteria2Bandwidth) * 1000 * 1000 / 8
 }
 
 // hysteria2PSK derives the Salamander pre-shared key (32 bytes) from the
@@ -144,12 +154,13 @@ func (hysteria2Proto) Listen(addr string, opts Options) (ProtoServer, error) {
 		ch:   make(chan Tunnel, 8),
 		done: make(chan struct{}),
 	}
+	bw := hysteria2Bandwidth(opts)
 	srv, err := hyserver.NewServer(&hyserver.Config{
 		TLSConfig:       hyserver.TLSConfig{Certificates: []tls.Certificate{cert}},
 		QUICConfig:      hyserver.QUICConfig{MaxIdleTimeout: hysteria2IdleTimeout},
 		Conn:            conn,
 		Authenticator:   &hysteria2Auth{want: hysteria2Password(opts)},
-		BandwidthConfig: hyserver.BandwidthConfig{MaxTx: hysteria2BrutalRate, MaxRx: hysteria2BrutalRate},
+		BandwidthConfig: hyserver.BandwidthConfig{MaxTx: bw, MaxRx: bw},
 		DisableUDP:      true,
 		Outbound:        &hysteria2Outbound{ch: s.ch, done: s.done},
 	})
@@ -213,15 +224,18 @@ func (hysteria2Proto) Dial(addr string, opts Options) (Tunnel, error) {
 	if err != nil {
 		return nil, err
 	}
+	bw := hysteria2Bandwidth(opts)
 	cfg := &hyclient.Config{
 		ConnFactory: &hysteria2ConnFactory{psk: hysteria2PSK(opts)},
 		ServerAddr:  ua,
 		Auth:        hysteria2Password(opts),
 		TLSConfig:   hyclient.TLSConfig{ServerName: hysteria2SNI, InsecureSkipVerify: true},
 		QUICConfig:  hyclient.QUICConfig{MaxIdleTimeout: hysteria2IdleTimeout},
+		// 0 (unset) negotiates the adaptive BBR controller on both ends; a
+		// configured rate engages Brutal at that rate.
 		BandwidthConfig: hyclient.BandwidthConfig{
-			MaxTx: hysteria2BrutalRate,
-			MaxRx: hysteria2BrutalRate,
+			MaxTx: bw,
+			MaxRx: bw,
 		},
 	}
 	type dialResult struct {

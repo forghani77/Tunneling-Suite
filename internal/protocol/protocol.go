@@ -53,6 +53,13 @@ type Options struct {
 	// Password is the shared secret for anytls, naive, the ipsec static
 	// SA, and the l2tp session parameters. Empty means defaultPassword.
 	Password string
+	// Hysteria2Bandwidth is the fixed Brutal send rate for the hysteria2
+	// protocol, in Mbps. 0 (the default) matches real Hysteria2: the
+	// bandwidth negotiation stays at zero and both ends run the adaptive
+	// BBR congestion controller, ramping to the available link speed. A
+	// non-zero value on the client engages the Brutal fixed-rate sender at
+	// that rate (the server caps it with its own value when set).
+	Hysteria2Bandwidth int
 	// TLSCertFile/TLSKeyFile optionally point at a server certificate pair.
 	// When empty the server generates an ephemeral self-signed certificate.
 	TLSCertFile string
