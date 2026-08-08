@@ -60,6 +60,13 @@ type Options struct {
 	// ClientIP is the client's local IP address as observed by the server.
 	// Used by raw layer-3 protocols (GRE/IPIP/SIT) when crafting packets.
 	ClientIP net.IP
+	// Blind tells the WireGuard-family protocols (wireguard, amnezia,
+	// amnezia2) to skip their TCP key-exchange control plane and instead use
+	// the embedded known keys and fixed inner echo port, so the whole tunnel
+	// runs over UDP alone. Used by the client's --blind mode for servers
+	// behind a firewall that blocks TCP. The server always listens with the
+	// known keys, so the two paths interoperate.
+	Blind bool
 }
 
 // rawDatagram marks the raw layer-3 protocols (gre, ipip, sit, 6to4, icmp,

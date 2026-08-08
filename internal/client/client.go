@@ -71,6 +71,7 @@ func Run(cfg Config) (*report.Report, error) {
 		SSPassword: cfg.SSPassword,
 		Password:   cfg.Password,
 		ClientIP:   clientIP,
+		Blind:      cfg.Blind,
 	}
 
 	results := make([]report.Result, 0, len(protos))

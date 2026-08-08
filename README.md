@@ -122,13 +122,19 @@ Notes:
   `wireguard` interface, exchange keys over a control channel, and send UDP
   probes through the encrypted tunnel (internal address `10.9.0.1/24` ⇄
   `10.9.0.2/24`). Requires the `wireguard` kernel module and the
-  `wireguard-tools` `wg` binary.
+  `wireguard-tools` `wg` binary. The key exchange happens over a TCP control
+  channel that client `--blind` skips entirely: both ends then use the
+  **embedded known keys** and a fixed inner echo port, so the whole tunnel
+  runs over UDP alone.
 - AmneziaWG runs **userspace** (`amneziawg-go`): each end creates a TUN
   interface and an obfuscated AmneziaWG device, no kernel module needed. The
   obfuscation parameters (junk packets `Jc`/`Jmin`/`Jmax`, padding `S1`/`S2`,
   dynamic headers `H1`–`H4`, and for `amnezia2` the CPS concealment tags
   `I1`–`I5`/`J1`–`J3`) are fixed and identical on both ends. Internal
-  addresses `10.11.0.0/24` (amnezia) and `10.12.0.0/24` (amnezia2).
+  addresses `10.11.0.0/24` (amnezia) and `10.12.0.0/24` (amnezia2). Like
+  WireGuard, the key exchange runs over a TCP control channel that client
+  `--blind` skips: both ends then use the embedded known keys and the fixed
+  inner echo port, so the tunnel runs over UDP alone.
 - TAP is a real **layer-2** tunnel: each end creates an Ethernet TAP
   interface (`IFF_TAP`) and a userspace relay forwards every L2 frame
   between them over UDP, forming a transparent bridge (ARP included). Test
@@ -248,6 +254,10 @@ tunnel-suite client [flags]
                        the --throughput list
   --throughput-time float  throughput test duration in seconds (default 5)
   --throughput-size int   throughput frame size in bytes (default 60000)
+  --blind              probe every protocol directly, skipping the server's
+                       TCP control port and the wireguard/amnezia/amnezia2
+                       TCP key exchange (for servers behind a firewall that
+                       blocks TCP)
   --no-color           disable ANSI colors
   --mode string       forward|socks: run a persistent tunnel endpoint instead
                       of the benchmark (needs --protocol, --local-port)
@@ -367,6 +377,20 @@ Rule of thumb: the **server** on a VPS should be a system service (no
 `--user`, starts at boot, no login needed); a **client** tunnel on a machine
 you log into can be either — `--user` (plus optional linger) keeps it
 root-free. `--dry-run` prints the exact unit and commands either way.
+
+### Blind mode (TCP fully blocked)
+
+The client normally fetches the server's protocol manifest from the control
+port (`base+0`, TCP). `--blind` skips that, probes every protocol at its
+standard base-port offset, and — for `wireguard`/`amnezia`/`amnezia2` — also
+skips the TCP key-exchange handshake: both ends use **embedded known keys**
+and a **fixed inner echo port**, so those tunnels establish over UDP alone.
+This is meant for servers behind a firewall that filters TCP on the control
+port (and often on the protocol control ports too). Protocols whose dial or
+handshake cannot complete show as `skipped` with the reason, and every dial
+is internally time-bounded so the run always finishes. Note the known keys
+are public constants compiled into the binary — the harness is a benchmark
+tool, not a secure VPN.
 
 ### Port layout
 

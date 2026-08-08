@@ -40,7 +40,11 @@ func (wgProto) NeedsRoot() bool { return true }
 const (
 	wgServerIP = "10.9.0.1"
 	wgClientIP = "10.9.0.2"
-	wgPrefix   = "wgts" // interface name prefix (kept short for IFNAMSIZ=15)
+	// wgStaticClientIP is the dedicated inner IP of the pre-provisioned
+	// known-key (blind-mode) client peer. It never overlaps the per-session
+	// dynamic client above, so both paths coexist on the same interface.
+	wgStaticClientIP = "10.9.0.3"
+	wgPrefix         = "wgts" // interface name prefix (kept short for IFNAMSIZ=15)
 
 	// wgControlTimeout bounds the whole client key exchange (TCP connect +
 	// read) and each server-side handshake read. A peer that accepts TCP but
@@ -144,6 +148,7 @@ type wgServer struct {
 	ctl        net.Listener
 	echo       *udpServer
 	prevPeer   string // pubkey of the previously configured client peer
+	peerMu     sync.Mutex
 	closeOnce  sync.Once
 }
 
@@ -173,10 +178,11 @@ func (wgProto) Listen(addr string, opts Options) (ProtoServer, error) {
 		}
 	}()
 
-	priv, pub, err := wgKeypair()
-	if err != nil {
-		return nil, err
-	}
+	// Use the embedded well-known server keypair so blind-mode clients (see
+	// client --blind) can dial over UDP alone without any key exchange.
+	sk := staticWg
+	priv := sk.serverPrivBytes()
+	pub := sk.serverPubBytes()
 	if err := runCmd("ip", "addr", "add", wgServerIP+"/24", "dev", iface); err != nil {
 		return nil, err
 	}
@@ -186,12 +192,19 @@ func (wgProto) Listen(addr string, opts Options) (ProtoServer, error) {
 	if err := wgSetPrivateKey(iface, priv); err != nil {
 		return nil, err
 	}
+	// Pre-provision the well-known blind-mode client peer (its own inner IP,
+	// so it never overlaps the per-session dynamic client).
+	if err := runCmd("wg", "set", iface, "peer", base64.StdEncoding.EncodeToString(sk.clientPubBytes()), "allowed-ips", wgStaticClientIP+"/32"); err != nil {
+		return nil, err
+	}
 	if err := runCmd("ip", "link", "set", iface, "up"); err != nil {
 		return nil, err
 	}
 
-	// 2. Echo listener bound to the internal tunnel address.
-	server, err := (&udpProto{}).Listen(JoinHostPort(wgServerIP, 0), opts)
+	// 2. Echo listener bound to the internal tunnel address on the fixed
+	// well-known inner port, so blind-mode clients know it without any
+	// exchange.
+	server, err := (&udpProto{}).Listen(JoinHostPort(wgServerIP, innerEchoPort), opts)
 	if err != nil {
 		return nil, err
 	}
@@ -203,57 +216,69 @@ func (wgProto) Listen(addr string, opts Options) (ProtoServer, error) {
 		return nil, err
 	}
 
+	s := &wgServer{iface: iface, ifaceReady: true, pub: pub, ctl: ctl, echo: echoSrv}
+	go s.serveControl()
 	cleanupIface = false
-	return &wgServer{iface: iface, ifaceReady: true, pub: pub, ctl: ctl, echo: echoSrv}, nil
+	return s, nil
 }
 
-// Accept performs the key exchange, configures the peer, then waits for the
-// first datagram arriving through the encrypted tunnel. Transient per-client
-// handshake failures are logged and skipped so a misbehaving client cannot
-// take down the protocol for everyone else; only listener closure (shutdown)
-// is reported as an error.
+// Accept serves any client session as soon as its first decrypted datagram
+// arrives through the tunnel. The TCP key exchange (serveControl) only
+// configures the dynamic per-session peer — the pre-provisioned known-key
+// (blind-mode) peer needs no exchange at all — so it must not gate tunnel
+// delivery: in blind mode there is no TCP connection, yet the static client's
+// session must still be echoed.
 func (s *wgServer) Accept() (Tunnel, error) {
+	return s.echo.Accept()
+}
+
+// serveControl processes TCP key-exchange connections in the background.
+// Transient per-client handshake failures are logged and skipped so a
+// misbehaving client cannot take down the protocol for everyone else; only
+// listener closure (shutdown) ends the loop.
+func (s *wgServer) serveControl() {
 	for {
 		c, err := s.ctl.Accept()
 		if err != nil {
-			return nil, err
+			return
 		}
-		tun, err := s.acceptClient(c)
-		_ = c.Close()
-		if err != nil {
-			log.Printf("wireguard handshake failed: %v", err)
-			continue
-		}
-		return tun, nil
+		go func(c net.Conn) {
+			defer c.Close()
+			if err := s.acceptClient(c); err != nil {
+				log.Printf("wireguard handshake failed: %v", err)
+			}
+		}(c)
 	}
 }
 
 // acceptClient runs the key exchange for a single control connection.
-func (s *wgServer) acceptClient(c net.Conn) (Tunnel, error) {
+func (s *wgServer) acceptClient(c net.Conn) error {
 	// Bound the handshake (same pattern as the smtp protocol): a peer that
 	// connects and never sends a line must not stall the accept loop for
 	// every other client.
 	_ = c.SetDeadline(time.Now().Add(wgControlTimeout))
 	line, err := bufio.NewReader(c).ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("read client pubkey: %w", err)
+		return fmt.Errorf("read client pubkey: %w", err)
 	}
 	clientPubHex := strings.TrimSpace(line)
 	clientPub, err := hex.DecodeString(clientPubHex)
 	if err != nil {
-		return nil, fmt.Errorf("bad client pubkey: %w", err)
+		return fmt.Errorf("bad client pubkey: %w", err)
 	}
 	// Drop the previous client's peer so repeated tests do not accumulate
 	// overlapping allowed-IPs on the same interface. Note: `peer` keys must be
 	// base64 for wg(8) (hex would fail parsing and be silently discarded).
 	peerB64 := base64.StdEncoding.EncodeToString(clientPub)
+	s.peerMu.Lock()
+	defer s.peerMu.Unlock()
 	if s.prevPeer != "" {
 		_ = runCmd("wg", "set", s.iface, "peer", s.prevPeer, "remove")
 	}
 	if err := runCmd("wg", "set", s.iface,
 		"peer", peerB64,
 		"allowed-ips", wgClientIP+"/32"); err != nil {
-		return nil, err
+		return err
 	}
 	s.prevPeer = peerB64
 
@@ -263,12 +288,7 @@ func (s *wgServer) acceptClient(c net.Conn) (Tunnel, error) {
 		InternalIP: wgServerIP,
 		EchoPort:   echoPort,
 	}
-	if err := json.NewEncoder(c).Encode(info); err != nil {
-		return nil, err
-	}
-	// Wait for the client's interface to come up and the first encrypted
-	// packet to arrive on the echo socket.
-	return s.echo.Accept()
+	return json.NewEncoder(c).Encode(info)
 }
 
 func (s *wgServer) Close() error {
@@ -321,31 +341,53 @@ func (wgProto) Dial(addr string, opts Options) (Tunnel, error) {
 	}
 	udpPort := wgPortOffset(ctlPort)
 
-	// 1. Control connection: exchange keys.
-	c, err := net.DialTimeout("tcp", addr, wgControlTimeout)
-	if err != nil {
-		return nil, err
-	}
-	// Bound the key exchange (same pattern as the smtp protocol): a service
-	// squatting on the control port that accepts TCP but never sends the
-	// server info would otherwise hang the dial forever (the benchmark's
-	// per-protocol budget only starts after Dial returns).
-	_ = c.SetDeadline(time.Now().Add(wgControlTimeout))
-	priv, pub, err := wgKeypair()
-	if err != nil {
+	// 1. Establish identity and the server's inner echo endpoint. Normally a
+	// short TCP key exchange on the control port; in blind mode (server
+	// behind a firewall that blocks TCP) both ends instead agree on the
+	// embedded known keys and the fixed inner echo port, so no TCP is
+	// touched at all.
+	var priv, serverPub []byte
+	internalIP := wgServerIP
+	clientIP := wgClientIP
+	echoPort := 0
+	if opts.Blind {
+		sk := staticWg
+		priv = sk.clientPrivBytes()
+		serverPub = sk.serverPubBytes()
+		clientIP = wgStaticClientIP
+		echoPort = innerEchoPort
+	} else {
+		c, err := net.DialTimeout("tcp", addr, wgControlTimeout)
+		if err != nil {
+			return nil, err
+		}
+		// Bound the key exchange (same pattern as the smtp protocol): a
+		// service squatting on the control port that accepts TCP but never
+		// sends the server info would otherwise hang the dial forever (the
+		// benchmark's per-protocol budget only starts after Dial returns).
+		_ = c.SetDeadline(time.Now().Add(wgControlTimeout))
+		var pub []byte
+		if priv, pub, err = wgKeypair(); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		if _, err := fmt.Fprintf(c, "%s\n", hex.EncodeToString(pub)); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		var info wgServerInfo
+		if err := json.NewDecoder(c).Decode(&info); err != nil {
+			_ = c.Close()
+			return nil, fmt.Errorf("key exchange failed (is another service on this port?): %w", err)
+		}
 		_ = c.Close()
-		return nil, err
+		serverPub, err = hex.DecodeString(info.ServerPub)
+		if err != nil {
+			return nil, fmt.Errorf("bad server pubkey: %w", err)
+		}
+		internalIP = info.InternalIP
+		echoPort = info.EchoPort
 	}
-	if _, err := fmt.Fprintf(c, "%s\n", hex.EncodeToString(pub)); err != nil {
-		_ = c.Close()
-		return nil, err
-	}
-	var info wgServerInfo
-	if err := json.NewDecoder(c).Decode(&info); err != nil {
-		_ = c.Close()
-		return nil, fmt.Errorf("key exchange failed (is another service on this port?): %w", err)
-	}
-	_ = c.Close()
 
 	// 2. Bring up the local interface.
 	iface := wgIfaceName()
@@ -359,21 +401,17 @@ func (wgProto) Dial(addr string, opts Options) (Tunnel, error) {
 		}
 	}()
 
-	if err := runCmd("ip", "addr", "add", wgClientIP+"/24", "dev", iface); err != nil {
+	if err := runCmd("ip", "addr", "add", clientIP+"/24", "dev", iface); err != nil {
 		return nil, err
 	}
 	endpoint := net.JoinHostPort(host, strconv.Itoa(udpPort))
-	serverPub, err := hex.DecodeString(info.ServerPub)
-	if err != nil {
-		return nil, fmt.Errorf("bad server pubkey: %w", err)
-	}
 	if err := wgSetPrivateKey(iface, priv); err != nil {
 		return nil, err
 	}
 	if err := runCmd("wg", "set", iface,
 		"peer", base64.StdEncoding.EncodeToString(serverPub),
 		"endpoint", endpoint,
-		"allowed-ips", info.InternalIP+"/32",
+		"allowed-ips", internalIP+"/32",
 		"persistent-keepalive", "5"); err != nil {
 		return nil, err
 	}
@@ -382,8 +420,8 @@ func (wgProto) Dial(addr string, opts Options) (Tunnel, error) {
 	}
 
 	// 3. Datagram channel into the tunnel.
-	ra := &net.UDPAddr{IP: net.ParseIP(info.InternalIP), Port: info.EchoPort}
-	conn, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP(wgClientIP), Port: 0}, ra)
+	ra := &net.UDPAddr{IP: net.ParseIP(internalIP), Port: echoPort}
+	conn, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP(clientIP), Port: 0}, ra)
 	if err != nil {
 		return nil, err
 	}

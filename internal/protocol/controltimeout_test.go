@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -76,6 +77,40 @@ func TestStreamDialSilentServer(t *testing.T) {
 			if d := time.Since(start); d > 15*time.Second {
 				t.Fatalf("Dial hung for %v against a silent server", d)
 			}
+		})
+	}
+}
+
+// TestBlindDialSkipsTCPControl verifies that with Options.Blind the
+// WireGuard-family dials never touch their TCP control plane: the server
+// control port is a silent listener (which a non-blind dial would block on
+// forever), yet the blind dial must sail past it straight to TUN setup.
+// Without root the dial fails at TUN creation — a different, later error —
+// and that is the pass condition.
+func TestBlindDialSkipsTCPControl(t *testing.T) {
+	ln := silentListener(t)
+	for _, tc := range []struct {
+		name string
+		p    Protocol
+	}{
+		{"wireguard", wgProto{}},
+		{"amnezia", amneziaProto{awgV1}},
+		{"amnezia2", amneziaProto{awgV2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tun, err := tc.p.Dial(ln.Addr().String(), Options{Blind: true})
+			if err != nil {
+				// Any error from the TCP control plane (or a connect to it)
+				// means the blind path wrongly dialed TCP.
+				for _, marker := range []string{"key exchange", "connection refused", "i/o timeout"} {
+					if strings.Contains(err.Error(), marker) {
+						t.Fatalf("blind dial touched the TCP control plane: %v", err)
+					}
+				}
+				return // no root/TUN here: expected to fail at TUN creation
+			}
+			defer tun.Close()
 		})
 	}
 }

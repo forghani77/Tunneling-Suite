@@ -551,7 +551,11 @@ The client normally talks to the server's control port (base+0, TCP) to
 fetch its protocol manifest. If that port is filtered — e.g. the server sits
 behind a firewall that blocks TCP — pass --blind to skip the control port
 and probe every protocol directly against its standard base-port offset:
-unreachable protocols then show as failed dials instead of "not offered".`,
+unreachable protocols then show as failed dials instead of "not offered".
+In blind mode the wireguard/amnezia/amnezia2 protocols also skip their TCP
+key-exchange handshake entirely and use the embedded known keys plus the
+fixed inner echo port, so those tunnels run over UDP alone even where TCP is
+fully blocked.`,
 		Example: `  tunnel-suite client --server 203.0.113.10 --base-port 10000
   tunnel-suite client --server 203.0.113.10 --protocols tcp,tls,quic --pings 100
   tunnel-suite client --server 203.0.113.10 --throughput tcp,udp,kcp --throughput-time 10
@@ -651,7 +655,7 @@ unreachable protocols then show as failed dials instead of "not offered".`,
 
 			fmt.Printf("tunnel-suite client → server %s (base port %d)\n", serverHost, basePort)
 			if blind {
-				fmt.Println("blind mode: probing protocols directly (control port skipped — assumes the standard base-port offsets)")
+				fmt.Println("blind mode: probing protocols directly (control port skipped — wireguard/amnezia/amnezia2 use the embedded known keys over UDP alone)")
 			}
 			// Banner lists only what this run will actually test.
 			if throughputOnly.enabled {
@@ -727,7 +731,7 @@ unreachable protocols then show as failed dials instead of "not offered".`,
 	f.BoolVar(&noColor, "no-color", false, "disable ANSI colors")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password (must match server)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp (must match server)")
-	f.BoolVar(&blind, "blind", false, "probe every protocol directly, skipping the server's TCP control port (for servers behind a firewall that filters TCP)")
+	f.BoolVar(&blind, "blind", false, "probe every protocol directly, skipping the server's TCP control port and the wireguard/amnezia/amnezia2 TCP key exchange (for servers behind a firewall that filters TCP)")
 	f.StringVar(&throughput, "throughput", "", "comma-separated protocols to run a throughput speed test against (default: none)")
 	f.Var(throughputOnly, "throughput-only", "run only the throughput speed tests against the given protocols (skip the standard benchmark); accepts a list (--throughput-only=tcp,udp or --throughput-only tcp,udp) or bare to reuse the --throughput list")
 	f.Float64Var(&throughputSec, "throughput-time", 5, "throughput test duration (s)")

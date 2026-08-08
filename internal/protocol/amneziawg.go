@@ -59,7 +59,11 @@ type awgParams struct {
 	Name     string
 	ServerIP string
 	ClientIP string
-	overhead int
+	// StaticClientIP is the dedicated inner IP of the pre-provisioned
+	// known-key (blind-mode) client peer; it never overlaps the per-session
+	// dynamic client (ClientIP), so both paths coexist on the same device.
+	StaticClientIP string
+	overhead       int
 
 	// Classic (v1) parameters.
 	Jc, Jmin, Jmax, S1, S2 int
@@ -73,7 +77,7 @@ type awgParams struct {
 
 // awgV1 is AmneziaWG 1.x with the classic obfuscation parameters.
 var awgV1 = awgParams{
-	Name: "amnezia", ServerIP: "10.11.0.1", ClientIP: "10.11.0.2", overhead: 88,
+	Name: "amnezia", ServerIP: "10.11.0.1", ClientIP: "10.11.0.2", StaticClientIP: "10.11.0.3", overhead: 88,
 	Jc: 3, Jmin: 40, Jmax: 70, S1: 15, S2: 25,
 	H1: 12345678, H2: 87654321, H3: 11223344, H4: 44332211,
 }
@@ -81,7 +85,7 @@ var awgV1 = awgParams{
 // awgV2 is AmneziaWG 2.0: v1 parameters plus CPS concealment tags (I1–I5),
 // controlled junk (J1–J3) and the junk timeout.
 var awgV2 = awgParams{
-	Name: "amnezia2", ServerIP: "10.12.0.1", ClientIP: "10.12.0.2", overhead: 92,
+	Name: "amnezia2", ServerIP: "10.12.0.1", ClientIP: "10.12.0.2", StaticClientIP: "10.12.0.3", overhead: 92,
 	Jc: 3, Jmin: 40, Jmax: 70, S1: 15, S2: 25,
 	H1: 12345678, H2: 87654321, H3: 11223344, H4: 44332211,
 	I1:    "<b 0xf6ab3267fa><c><b 0xf6ab><t><r 10><wt 10>",
@@ -133,6 +137,7 @@ type awgServer struct {
 	echo      *udpServer
 	pub       []byte
 	prevPeer  string // hex pubkey of the previously configured client peer
+	peerMu    sync.Mutex
 	closeOnce sync.Once
 }
 
@@ -162,23 +167,33 @@ func (p amneziaProto) Listen(addr string, opts Options) (ProtoServer, error) {
 		return nil, err
 	}
 
-	priv, pub, err := wgKeypair()
-	if err != nil {
-		cleanupTun()
-		return nil, err
-	}
+	// Use the embedded well-known server keypair so blind-mode clients (see
+	// client --blind) can dial over UDP alone without any key exchange.
+	sk := staticKeysFor(p.params.Name)
+	priv := sk.serverPrivBytes()
+	pub := sk.serverPubBytes()
 	dev := device.NewDevice(tdev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, "awg: "))
 	// From here on, dev.Close() owns the TUN fd (it closes it).
 	if err := dev.IpcSet(p.params.deviceLines(priv, dataPort)); err != nil {
 		dev.Close()
 		return nil, fmt.Errorf("awg device config: %w", err)
 	}
+	// Pre-provision the well-known blind-mode client peer on its own inner
+	// IP, so it never overlaps the per-session dynamic client.
+	if err := dev.IpcSet(fmt.Sprintf("public_key=%s\nallowed_ip=%s/32\n",
+		hex.EncodeToString(sk.clientPubBytes()), p.params.StaticClientIP)); err != nil {
+		dev.Close()
+		return nil, fmt.Errorf("awg static peer config: %w", err)
+	}
 	if err := dev.Up(); err != nil {
 		dev.Close()
 		return nil, err
 	}
 
-	echoSrv, err := (&udpProto{}).Listen(JoinHostPort(p.params.ServerIP, 0), opts)
+	// Echo listener bound to the internal tunnel address on the fixed
+	// well-known inner port, so blind-mode clients know it without any
+	// exchange.
+	echoSrv, err := (&udpProto{}).Listen(JoinHostPort(p.params.ServerIP, innerEchoPort), opts)
 	if err != nil {
 		dev.Close()
 		return nil, err
@@ -190,59 +205,71 @@ func (p amneziaProto) Listen(addr string, opts Options) (ProtoServer, error) {
 		return nil, err
 	}
 
-	return &awgServer{
+	s := &awgServer{
 		params: p.params,
 		dev:    dev,
 		ctl:    ctl,
 		echo:   echoSrv.(*udpServer),
 		pub:    pub,
-	}, nil
+	}
+	go s.serveControl()
+	return s, nil
 }
 
-// Accept performs the key exchange, configures the peer, then waits for the
-// first datagram arriving through the encrypted tunnel. Transient per-client
-// handshake failures are logged and skipped so a misbehaving client cannot
-// take down the protocol for everyone else; only listener closure (shutdown)
-// is reported as an error.
+// Accept serves any client session as soon as its first decrypted datagram
+// arrives through the tunnel. The TCP key exchange (serveControl) only
+// configures the dynamic per-session peer — the pre-provisioned known-key
+// (blind-mode) peer needs no exchange at all — so it must not gate tunnel
+// delivery: in blind mode there is no TCP connection, yet the static client's
+// session must still be echoed.
 func (s *awgServer) Accept() (Tunnel, error) {
+	return s.echo.Accept()
+}
+
+// serveControl processes TCP key-exchange connections in the background.
+// Transient per-client handshake failures are logged and skipped so a
+// misbehaving client cannot take down the protocol for everyone else; only
+// listener closure (shutdown) ends the loop.
+func (s *awgServer) serveControl() {
 	for {
 		c, err := s.ctl.Accept()
 		if err != nil {
-			return nil, err
+			return
 		}
-		tun, err := s.acceptClient(c)
-		_ = c.Close()
-		if err != nil {
-			log.Printf("%s handshake failed: %v", s.params.Name, err)
-			continue
-		}
-		return tun, nil
+		go func(c net.Conn) {
+			defer c.Close()
+			if err := s.acceptClient(c); err != nil {
+				log.Printf("%s handshake failed: %v", s.params.Name, err)
+			}
+		}(c)
 	}
 }
 
 // acceptClient runs the key exchange for a single control connection.
-func (s *awgServer) acceptClient(c net.Conn) (Tunnel, error) {
+func (s *awgServer) acceptClient(c net.Conn) error {
 	// Bound the handshake (same pattern as the smtp protocol): a peer that
 	// connects and never sends a line must not stall the accept loop for
 	// every other client.
 	_ = c.SetDeadline(time.Now().Add(awgControlTimeout))
 	line, err := bufio.NewReader(c).ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("read client pubkey: %w", err)
+		return fmt.Errorf("read client pubkey: %w", err)
 	}
 	clientPub, err := hex.DecodeString(strings.TrimSpace(line))
 	if err != nil {
-		return nil, fmt.Errorf("bad client pubkey: %w", err)
+		return fmt.Errorf("bad client pubkey: %w", err)
 	}
 	peerHex := hex.EncodeToString(clientPub)
 
+	s.peerMu.Lock()
+	defer s.peerMu.Unlock()
 	if s.prevPeer != "" {
 		if err := s.dev.IpcSet(fmt.Sprintf("public_key=%s\nremove=true\n", s.prevPeer)); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if err := s.dev.IpcSet(fmt.Sprintf("public_key=%s\nallowed_ip=%s/32\n", peerHex, s.params.ClientIP)); err != nil {
-		return nil, err
+		return err
 	}
 	s.prevPeer = peerHex
 
@@ -251,10 +278,7 @@ func (s *awgServer) acceptClient(c net.Conn) (Tunnel, error) {
 		InternalIP: s.params.ServerIP,
 		EchoPort:   s.echo.LocalAddr().(*net.UDPAddr).Port,
 	}
-	if err := json.NewEncoder(c).Encode(info); err != nil {
-		return nil, err
-	}
-	return s.echo.Accept()
+	return json.NewEncoder(c).Encode(info)
 }
 
 func (s *awgServer) Close() error {
@@ -298,35 +322,52 @@ func (p amneziaProto) Dial(addr string, opts Options) (Tunnel, error) {
 	}
 	dataPort := ctlPort + 1
 
-	// 1. Control connection: exchange keys.
-	c, err := net.DialTimeout("tcp", addr, awgControlTimeout)
-	if err != nil {
-		return nil, err
-	}
-	// Bound the key exchange (same pattern as the smtp protocol): a service
-	// squatting on the control port that accepts TCP but never sends the
-	// server info would otherwise hang the dial forever (the benchmark's
-	// per-protocol budget only starts after Dial returns).
-	_ = c.SetDeadline(time.Now().Add(awgControlTimeout))
-	priv, pub, err := wgKeypair()
-	if err != nil {
+	// 1. Establish identity and the server's inner echo endpoint. Normally a
+	// short TCP key exchange on the control port; in blind mode (server
+	// behind a firewall that blocks TCP) both ends instead agree on the
+	// embedded known keys and the fixed inner echo port, so no TCP is
+	// touched at all.
+	var priv, serverPub []byte
+	internalIP := p.params.ServerIP
+	clientIP := p.params.ClientIP
+	echoPort := 0
+	if opts.Blind {
+		sk := staticKeysFor(p.params.Name)
+		priv = sk.clientPrivBytes()
+		serverPub = sk.serverPubBytes()
+		clientIP = p.params.StaticClientIP
+		echoPort = innerEchoPort
+	} else {
+		c, err := net.DialTimeout("tcp", addr, awgControlTimeout)
+		if err != nil {
+			return nil, err
+		}
+		// Bound the key exchange (same pattern as the smtp protocol): a
+		// service squatting on the control port that accepts TCP but never
+		// sends the server info would otherwise hang the dial forever (the
+		// benchmark's per-protocol budget only starts after Dial returns).
+		_ = c.SetDeadline(time.Now().Add(awgControlTimeout))
+		var pub []byte
+		if priv, pub, err = wgKeypair(); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		if _, err := fmt.Fprintf(c, "%s\n", hex.EncodeToString(pub)); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		var info wgServerInfo
+		if err := json.NewDecoder(c).Decode(&info); err != nil {
+			_ = c.Close()
+			return nil, fmt.Errorf("key exchange failed (is another service on this port?): %w", err)
+		}
 		_ = c.Close()
-		return nil, err
-	}
-	if _, err := fmt.Fprintf(c, "%s\n", hex.EncodeToString(pub)); err != nil {
-		_ = c.Close()
-		return nil, err
-	}
-	var info wgServerInfo
-	if err := json.NewDecoder(c).Decode(&info); err != nil {
-		_ = c.Close()
-		return nil, fmt.Errorf("key exchange failed (is another service on this port?): %w", err)
-	}
-	_ = c.Close()
-
-	serverPub, err := hex.DecodeString(info.ServerPub)
-	if err != nil {
-		return nil, fmt.Errorf("bad server pubkey: %w", err)
+		serverPub, err = hex.DecodeString(info.ServerPub)
+		if err != nil {
+			return nil, fmt.Errorf("bad server pubkey: %w", err)
+		}
+		internalIP = info.InternalIP
+		echoPort = info.EchoPort
 	}
 
 	// 2. Bring up the local TUN + device.
@@ -336,7 +377,7 @@ func (p amneziaProto) Dial(addr string, opts Options) (Tunnel, error) {
 		return nil, fmt.Errorf("create tun %s: %w (needs root + /dev/net/tun)", iface, err)
 	}
 	cleanupTun := func() { _ = tdev.Close() }
-	if err := runCmd("ip", "addr", "add", p.params.ClientIP+"/24", "dev", iface); err != nil {
+	if err := runCmd("ip", "addr", "add", clientIP+"/24", "dev", iface); err != nil {
 		cleanupTun()
 		return nil, err
 	}
@@ -350,7 +391,7 @@ func (p amneziaProto) Dial(addr string, opts Options) (Tunnel, error) {
 	endpoint := net.JoinHostPort(host, strconv.Itoa(dataPort))
 	uapi := p.params.deviceLines(priv, 0)
 	uapi += fmt.Sprintf("public_key=%s\nendpoint=%s\nallowed_ip=%s/32\npersistent_keepalive_interval=5\n",
-		hex.EncodeToString(serverPub), endpoint, info.InternalIP)
+		hex.EncodeToString(serverPub), endpoint, internalIP)
 	if err := dev.IpcSet(uapi); err != nil {
 		dev.Close()
 		return nil, fmt.Errorf("awg device config: %w", err)
@@ -361,8 +402,8 @@ func (p amneziaProto) Dial(addr string, opts Options) (Tunnel, error) {
 	}
 
 	// 3. Datagram channel into the tunnel.
-	ra := &net.UDPAddr{IP: net.ParseIP(info.InternalIP), Port: info.EchoPort}
-	uconn, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP(p.params.ClientIP), Port: 0}, ra)
+	ra := &net.UDPAddr{IP: net.ParseIP(internalIP), Port: echoPort}
+	uconn, err := net.DialUDP("udp", &net.UDPAddr{IP: net.ParseIP(clientIP), Port: 0}, ra)
 	if err != nil {
 		dev.Close()
 		return nil, err
