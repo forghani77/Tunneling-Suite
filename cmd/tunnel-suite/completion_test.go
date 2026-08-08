@@ -112,15 +112,15 @@ func TestRunCompletion(t *testing.T) {
 		wantHas string
 		wantNot string
 	}{
-		{name: "single dash token offers single dash", argv: []string{"tunnel-suite", "__complete", "client", "-pr"}, wantHas: "-protocol\t", wantNot: "--protocol\t"},
-		{name: "double dash token keeps double dash", argv: []string{"tunnel-suite", "__complete", "client", "--pr"}, wantHas: "--protocol\t", wantNot: "-protocol\t"},
+		{name: "single dash token offers single dash", argv: []string{"tunnel-suite", "__complete", "client", "-tu"}, wantHas: "-tunnel-protocol\t", wantNot: "--tunnel-protocol\t"},
+		{name: "double dash token keeps double dash", argv: []string{"tunnel-suite", "__complete", "client", "--tu"}, wantHas: "--tunnel-protocol\t", wantNot: "-tunnel-protocol\t"},
 		{name: "single dash forward flag", argv: []string{"tunnel-suite", "__complete", "server", "-for"}, wantHas: "-forward\t", wantNot: "--forward\t"},
 		{name: "bare single dash offers every flag single-dash", argv: []string{"tunnel-suite", "__complete", "client", "-"}, wantHas: "-protocols-base-port\t", wantNot: "--protocols-base-port\t"},
-		{name: "no-desc request also single-dash", argv: []string{"tunnel-suite", "__completeNoDesc", "client", "-pr"}, wantHas: "-protocol", wantNot: "--protocol"},
+		{name: "no-desc request also single-dash", argv: []string{"tunnel-suite", "__completeNoDesc", "client", "-tu"}, wantHas: "-tunnel-protocol", wantNot: "--tunnel-protocol"},
 		{name: "throughput-only completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-throughput-only", "any"}, wantHas: "anytls"},
 		{name: "throughput-only = form completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-throughput-only=gr"}, wantHas: "gre"},
 		{name: "mode completes forward and socks", argv: []string{"tunnel-suite", "__complete", "client", "-mode", "f"}, wantHas: "forward"},
-		{name: "protocol completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-protocol", "qu"}, wantHas: "quic"},
+		{name: "tunnel-protocol completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-tunnel-protocol", "qu"}, wantHas: "quic"},
 	}
 	// Silence cobra's "Completion ended with directive" stderr diagnostic.
 	prevErr := rootCmd.ErrOrStderr()
@@ -136,8 +136,9 @@ func TestRunCompletion(t *testing.T) {
 				t.Fatalf("runCompletion() error = %v", err)
 			}
 			out := buf.String()
-			// Check per candidate line: -protocol must not match the line
-			// --protocol\t... (a plain substring check would false-positive).
+			// Check per candidate line: -tunnel-protocol must not match the
+			// line --tunnel-protocol\t... (a plain substring check would
+			// false-positive).
 			lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 			found, bad := false, false
 			for _, l := range lines {

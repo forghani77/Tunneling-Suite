@@ -208,8 +208,8 @@ JSON report written to report-20260806-...json
 
 ### Flag style
 
-Long flags accept either a single or a double dash — `-server H`, `-protocol
-tcp`, `-blind` are the same as `--server H`, `--protocol tcp`, `--blind`.
+Long flags accept either a single or a double dash — `-server H`, `-tunnel-protocol
+tcp`, `-blind` are the same as `--server H`, `--tunnel-protocol tcp`, `--blind`.
 The generated help and shell tab-completion render the single-dash form
 (`-for<TAB>` offers `-forward`; typing `--for<TAB>` still offers `--forward`).
 The examples below use the conventional double-dash spelling.
@@ -260,8 +260,10 @@ tunnel-suite client [flags]
                        TCP key exchange (for servers behind a firewall that
                        blocks TCP)
   --no-color           disable ANSI colors
+  --tunnel-protocol string
+                      tunnel protocol for --mode forward|socks (e.g. tcp, udp, ws)
   --mode string       forward|socks: run a persistent tunnel endpoint instead
-                      of the benchmark (needs --protocol, --local-port)
+                      of the benchmark (needs --tunnel-protocol, --local-port)
   --local-port int    local listen port for forwarding mode
   --remote-host/--remote-port
                       destination for --mode forward
@@ -302,16 +304,16 @@ package when it is loaded).
 Besides benchmarking, `tunnel-suite` can carry real TCP traffic through any
 of its tunnel protocols. Run the server with `--forward` (echo testing keeps
 working; without the flag the server is never an open relay), then on the
-client pick the tunnel protocol (`--protocol`, any supported protocol), how
-the tunnel is established and where it listens:
+client pick the tunnel protocol (`--tunnel-protocol`, any supported protocol),
+how the tunnel is established and where it listens:
 
 ```sh
 # fixed port forward: local 8080 -> remote 10.0.0.5:80 through a TCP tunnel
-tunnel-suite client --server HOST --protocol tcp --mode forward \
+tunnel-suite client --server HOST --tunnel-protocol tcp --mode forward \
   --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
 
 # local SOCKS5 proxy through a UDP tunnel
-tunnel-suite client --server HOST --protocol udp --mode socks --local-port 1080
+tunnel-suite client --server HOST --tunnel-protocol udp --mode socks --local-port 1080
 ```
 
 `--mode forward` forwards the local port to a fixed destination; `--mode
@@ -326,15 +328,15 @@ Use the `install` subcommand to write a systemd unit and start it with
 
 ```sh
 sudo tunnel-suite install server --protocols-base-port 20000
-sudo tunnel-suite install client --server HOST --protocol tcp \
+sudo tunnel-suite install client --server HOST --tunnel-protocol tcp \
   --mode forward --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
 tunnel-suite install server --dry-run                    # preview only
 tunnel-suite install client --uninstall                  # just the unit name
 ```
 
 `install server` writes a unit that runs the server with relay enabled by
-default. For the client, the tunnel protocol (`--protocol`, any supported
-protocol), the mode (`--mode forward|socks`) and the local port
+default. For the client, the tunnel protocol (`--tunnel-protocol`, any
+supported protocol), the mode (`--mode forward|socks`) and the local port
 (`--local-port`) are required. `--name` sets a custom systemd unit name;
 `--uninstall` only needs that name, so the endpoint flags are not required to
 remove the service again.

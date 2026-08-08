@@ -31,8 +31,8 @@ func TestNormalizeSingleDash(t *testing.T) {
 		{
 			name: "client flags",
 			path: "client",
-			args: []string{"client", "-server", "H", "-protocol", "tcp", "-mode", "forward", "-local-port", "8080"},
-			want: []string{"client", "--server", "H", "--protocol", "tcp", "--mode", "forward", "--local-port", "8080"},
+			args: []string{"client", "-server", "H", "-tunnel-protocol", "tcp", "-mode", "forward", "-local-port", "8080"},
+			want: []string{"client", "--server", "H", "--tunnel-protocol", "tcp", "--mode", "forward", "--local-port", "8080"},
 		},
 		{
 			name: "server flags",
@@ -43,8 +43,8 @@ func TestNormalizeSingleDash(t *testing.T) {
 		{
 			name: "equals form",
 			path: "client",
-			args: []string{"client", "-protocol=tcp", "-protocols-base-port=20000"},
-			want: []string{"client", "--protocol=tcp", "--protocols-base-port=20000"},
+			args: []string{"client", "-tunnel-protocol=tcp", "-protocols-base-port=20000"},
+			want: []string{"client", "--tunnel-protocol=tcp", "--protocols-base-port=20000"},
 		},
 		{
 			name: "double dash untouched",
@@ -73,8 +73,8 @@ func TestNormalizeSingleDash(t *testing.T) {
 		{
 			name: "install client endpoint flags",
 			path: "install client",
-			args: []string{"install", "client", "-server", "H", "-protocol", "tcp"},
-			want: []string{"install", "client", "--server", "H", "--protocol", "tcp"},
+			args: []string{"install", "client", "-server", "H", "-tunnel-protocol", "tcp"},
+			want: []string{"install", "client", "--server", "H", "--tunnel-protocol", "tcp"},
 		},
 		{
 			name: "unknown single-dash token untouched",
@@ -175,8 +175,8 @@ func TestNormalizeArgs(t *testing.T) {
 	}{
 		{
 			name: "client invocation",
-			argv: []string{"tunnel-suite", "client", "-server", "H", "-protocol", "tcp"},
-			want: []string{"tunnel-suite", "client", "--server", "H", "--protocol", "tcp"},
+			argv: []string{"tunnel-suite", "client", "-server", "H", "-tunnel-protocol", "tcp"},
+			want: []string{"tunnel-suite", "client", "--server", "H", "--tunnel-protocol", "tcp"},
 		},
 		{
 			name: "server invocation",
@@ -190,8 +190,8 @@ func TestNormalizeArgs(t *testing.T) {
 		},
 		{
 			name: "completion request resolves the command being completed",
-			argv: []string{"tunnel-suite", "__complete", "client", "-protocol", ""},
-			want: []string{"tunnel-suite", "__complete", "client", "--protocol", ""},
+			argv: []string{"tunnel-suite", "__complete", "client", "-tunnel-protocol", ""},
+			want: []string{"tunnel-suite", "__complete", "client", "--tunnel-protocol", ""},
 		},
 		{
 			name: "completion partial token rewritten to enable flag completion",

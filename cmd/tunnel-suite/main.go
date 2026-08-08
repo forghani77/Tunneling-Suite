@@ -168,7 +168,7 @@ func rewriteCompletionFlags(b []byte, singleDash bool) []byte {
 
 // normalizeArgs rewrites single-dash long flags into their double-dash form
 // for the invoked command (and its subcommands), so "-forward", "-server H"
-// and "-protocol=tcp" work exactly like their "--" equivalents. pflag reads
+// and "-tunnel-protocol=tcp" work exactly like their "--" equivalents. pflag reads
 // a single dash as shorthand clusters, so a bare "-forward" would otherwise
 // be rejected as an unknown shorthand. Tokens are rewritten only when the
 // text after "-" matches a known flag name, which leaves flag values alone
@@ -206,8 +206,8 @@ func normalizeArgs(argv []string) []string {
 // The token right after a value-taking flag is that flag's value and is never
 // rewritten (so "--password -blind" keeps "-blind" as the password).
 // With prefixMatch (used for cobra's completion requests) a single-dash token
-// that prefixes a known flag name is rewritten too, so "-pr<TAB>" completes
-// like "--protocol".
+// that prefixes a known flag name is rewritten too, so "-tu<TAB>" completes
+// like "--tunnel-protocol".
 func normalizeSingleDash(args []string, cmd *cobra.Command, prefixMatch bool) []string {
 	known, valueFlags := flagShape(cmd)
 	out := make([]string, 0, len(args))
@@ -357,8 +357,8 @@ func (f *throughputOnlyFlag) Set(v string) error {
 	return nil
 }
 
-// completeProtocol tab-completes protocol names for --protocols and the
-// throughput protocol-list flags.
+// completeProtocol tab-completes protocol names for --protocols, the
+// throughput protocol-list flags and --tunnel-protocol.
 func completeProtocol(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	var out []string
 	for _, n := range protocol.Names() {
@@ -530,14 +530,14 @@ fully blocked.`,
   tunnel-suite client --server 203.0.113.10 --protocols tcp,tls,quic --pings 100
   tunnel-suite client --server 203.0.113.10 --throughput tcp,udp,kcp --throughput-time 10
   tunnel-suite client --server 203.0.113.10 --throughput-only vxlan-gpe --throughput-size 1400
-  tunnel-suite client --server HOST --protocol tcp --mode forward \
+  tunnel-suite client --server HOST --tunnel-protocol tcp --mode forward \
     --local-port 8080 --remote-host 10.0.0.5 --remote-port 80`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Forwarding mode: the client becomes a tunnel endpoint (port
 			// forward or SOCKS5 proxy) instead of running the benchmark.
 			if fwdMode != "" {
 				if fwdProtocol == "" {
-					fmt.Fprintln(os.Stderr, "error: -protocol is required in forward mode (the tunnel protocol, e.g. -protocol anytls)")
+					fmt.Fprintln(os.Stderr, "error: -tunnel-protocol is required in forward mode (the tunnel protocol, e.g. -tunnel-protocol anytls)")
 					_ = cmd.Usage()
 					return errSilent
 				}
@@ -686,7 +686,7 @@ fully blocked.`,
 	// Forwarding mode flags (used when --mode is set; the client then runs a
 	// persistent tunnel endpoint instead of the benchmark).
 	f.StringVar(&fwdMode, "mode", "", "forwarding mode: 'forward' (fixed remote target) or 'socks' (local SOCKS5 proxy); setting it runs the client as a persistent tunnel endpoint")
-	f.StringVar(&fwdProtocol, "protocol", "", "tunnel protocol for forwarding mode (e.g. tcp, udp, ws, ...)")
+	f.StringVar(&fwdProtocol, "tunnel-protocol", "", "tunnel protocol for forwarding mode (e.g. tcp, udp, ws, ...)")
 	f.StringVar(&fwdBind, "bind", "127.0.0.1", "local bind address for forwarding mode")
 	f.IntVar(&fwdLocalPort, "local-port", 0, "local listen port for forwarding mode")
 	f.StringVar(&fwdRemoteHost, "remote-host", "", "remote destination host for 'forward' mode")
@@ -695,7 +695,7 @@ fully blocked.`,
 	for _, name := range []string{"protocols", "throughput", "throughput-only"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, completeProtocol)
 	}
-	_ = cmd.RegisterFlagCompletionFunc("protocol", completeProtocol)
+	_ = cmd.RegisterFlagCompletionFunc("tunnel-protocol", completeProtocol)
 	_ = cmd.RegisterFlagCompletionFunc("mode", completeMode)
 	return cmd
 }

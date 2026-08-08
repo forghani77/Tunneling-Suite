@@ -487,7 +487,7 @@ func clientExecArgs(exe, server string, protocolsBasePort int, protocol, mode, b
 	args := []string{quoteArg(exe), "client",
 		"--server", quoteArg(server),
 		"--protocols-base-port", fmt.Sprintf("%d", protocolsBasePort),
-		"--protocol", protocol,
+		"--tunnel-protocol", protocol,
 		"--mode", mode,
 		"--bind", quoteArg(bind),
 		"--local-port", fmt.Sprintf("%d", localPort)}
@@ -512,7 +512,7 @@ func validateClientInstall(server, proto, mode string, localPort int, remoteHost
 		return fmt.Errorf("-server is required (the tunnel-suite server running with -forward)")
 	}
 	if proto == "" {
-		return fmt.Errorf("-protocol is required (the tunnel protocol)")
+		return fmt.Errorf("-tunnel-protocol is required (the tunnel protocol)")
 	}
 	if _, ok := protocol.ByName(protocol.NormalizeName(proto)); !ok {
 		return fmt.Errorf("unknown protocol %q (supported: %s)", proto, strings.Join(protocol.Names(), ", "))
@@ -623,9 +623,9 @@ connections through the chosen tunnel protocol to a server running with
 
 --uninstall only needs the unit name; the endpoint flags are not required to
 remove the service again.`,
-		Example: `  sudo tunnel-suite install client --server 203.0.113.10 --protocol tcp \
+		Example: `  sudo tunnel-suite install client --server 203.0.113.10 --tunnel-protocol tcp \
     --mode forward --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
-  tunnel-suite install client --server HOST --protocol udp --mode socks \
+  tunnel-suite install client --server HOST --tunnel-protocol udp --mode socks \
     --local-port 1080 --user`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.overall = "client"
@@ -661,7 +661,7 @@ remove the service again.`,
 	f.StringVar(&o.name, "name", "tunnel-suite-client", "systemd unit name")
 	f.StringVar(&server, "server", "", "server host or IP (required)")
 	f.IntVar(&protocolsBasePort, "protocols-base-port", 10000, "protocols base port (must match server)")
-	f.StringVar(&protocol, "protocol", "", "tunnel protocol, e.g. tcp, udp, ws (required)")
+	f.StringVar(&protocol, "tunnel-protocol", "", "tunnel protocol, e.g. tcp, udp, ws (required)")
 	f.StringVar(&mode, "mode", "", "forward or socks (required)")
 	f.StringVar(&bind, "bind", "127.0.0.1", "local bind address")
 	f.IntVar(&localPort, "local-port", 0, "local listen port (required)")
@@ -669,7 +669,7 @@ remove the service again.`,
 	f.IntVar(&remotePort, "remote-port", 0, "remote destination port (forward mode)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password")
-	_ = cmd.RegisterFlagCompletionFunc("protocol", completeProtocol)
+	_ = cmd.RegisterFlagCompletionFunc("tunnel-protocol", completeProtocol)
 	_ = cmd.RegisterFlagCompletionFunc("mode", completeMode)
 	return cmd
 }

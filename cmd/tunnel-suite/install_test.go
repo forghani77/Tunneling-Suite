@@ -117,7 +117,7 @@ func TestClientExecArgs(t *testing.T) {
 			localPort:         8080,
 			remoteHost:        "10.0.0.5",
 			remotePort:        80,
-			want:              "/opt/bin/tunnel-suite client --server 203.0.113.10 --protocols-base-port 10000 --protocol tcp --mode forward --bind 127.0.0.1 --local-port 8080 --remote-host 10.0.0.5 --remote-port 80",
+			want:              "/opt/bin/tunnel-suite client --server 203.0.113.10 --protocols-base-port 10000 --tunnel-protocol tcp --mode forward --bind 127.0.0.1 --local-port 8080 --remote-host 10.0.0.5 --remote-port 80",
 		},
 		{
 			name:              "socks mode omits remote flags",
@@ -127,7 +127,7 @@ func TestClientExecArgs(t *testing.T) {
 			mode:              "socks",
 			bind:              "127.0.0.1",
 			localPort:         1080,
-			want:              "/opt/bin/tunnel-suite client --server HOST --protocols-base-port 10000 --protocol udp --mode socks --bind 127.0.0.1 --local-port 1080",
+			want:              "/opt/bin/tunnel-suite client --server HOST --protocols-base-port 10000 --tunnel-protocol udp --mode socks --bind 127.0.0.1 --local-port 1080",
 		},
 		{
 			name:              "secrets and quoted server",
@@ -139,7 +139,7 @@ func TestClientExecArgs(t *testing.T) {
 			localPort:         1080,
 			password:          "p w",
 			ss:                "ss",
-			want:              `/opt/bin/tunnel-suite client --server "my host" --protocols-base-port 10000 --protocol ws --mode socks --bind 127.0.0.1 --local-port 1080 --password "p w" --ss-password ss`,
+			want:              `/opt/bin/tunnel-suite client --server "my host" --protocols-base-port 10000 --tunnel-protocol ws --mode socks --bind 127.0.0.1 --local-port 1080 --password "p w" --ss-password ss`,
 		},
 	}
 	for _, c := range cases {
