@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"net"
+
 	"github.com/shadowsocks/go-shadowsocks2/core"
 )
 
@@ -39,9 +41,13 @@ func (ssProto) Dial(addr string, opts Options) (Tunnel, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := core.Dial("tcp", addr, ciph)
+	// core.Dial is a bare net.Dial (no connect timeout); a filtered or
+	// silently-dropping peer would block the dial for the OS connect timeout
+	// (~2min), stalling a blind probe. Bound the connect here and wrap the
+	// conn with the cipher ourselves.
+	c, err := net.DialTimeout("tcp", addr, connTimeout)
 	if err != nil {
 		return nil, err
 	}
-	return newStreamTunnel(c, "shadowsocks://"+addr), nil
+	return newStreamTunnel(ciph.StreamConn(c), "shadowsocks://"+addr), nil
 }

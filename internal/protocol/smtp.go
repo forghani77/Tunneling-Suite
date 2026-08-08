@@ -352,7 +352,10 @@ func smtpServeHandshake(c net.Conn, tlsCfg *tls.Config, users map[string]string)
 // ---------------------------------------------------------------------------
 
 func (smtpProto) Dial(addr string, opts Options) (Tunnel, error) {
-	c, err := net.Dial("tcp", addr)
+	// Bound the connect itself: the handshake deadline below only starts
+	// after connect, so a filtered port (dropped SYN) would otherwise block
+	// the dial for the OS connect timeout (~2min), stalling a blind probe.
+	c, err := net.DialTimeout("tcp", addr, connTimeout)
 	if err != nil {
 		return nil, err
 	}

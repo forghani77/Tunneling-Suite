@@ -55,24 +55,42 @@ func TestWireguardDialSilentServer(t *testing.T) {
 
 // TestStreamDialSilentServer verifies the stream-protocol handshakes fail
 // promptly against a silent control server: http reads the CONNECT response,
-// https/tls run the TLS handshake, naive the h2 TLS dial. All used to hang
-// forever — reported as the blind test hanging on http.
+// https/tls run the TLS handshake, naive the h2 TLS dial, smtp reads the SMTP
+// greeting. All used to hang forever — reported as the blind test hanging on
+// http. shadowsocks does no dial-time I/O (its encrypted header goes out on
+// the first write, bounded by the benchmark's read timeout), so its entry only
+// asserts the dial itself never blocks.
+//
+// Note: an accepting-but-silent listener reproduces only post-connect
+// handshake blocking. The connect-timeout class (dropped SYN on a filtered
+// port, the shadowsocks/smtp hang) needs a blackhole route and is verified
+// by the iptables-DROP e2e instead: a blind probe of either protocol now
+// skips in exactly connTimeout (10s) where it used to block ~130s.
 func TestStreamDialSilentServer(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		p    Protocol
+		name    string
+		p       Protocol
+		wantErr bool
 	}{
-		{"http", httpProto{}},
-		{"https", httpsProto{}},
-		{"naive", naiveProto{}},
+		{"http", httpProto{}, true},
+		{"https", httpsProto{}, true},
+		{"naive", naiveProto{}, true},
+		{"smtp", smtpProto{}, true},
+		{"shadowsocks", ssProto{}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel() // each waits out the 10s dial/handshake deadline
 			ln := silentListener(t)
 			start := time.Now()
-			_, err := tc.p.Dial(ln.Addr().String(), Options{})
-			if err == nil {
+			tun, err := tc.p.Dial(ln.Addr().String(), Options{})
+			if tc.wantErr && err == nil {
 				t.Fatal("Dial succeeded against a silent server")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("Dial failed unexpectedly against a silent server: %v", err)
+			}
+			if tun != nil {
+				defer tun.Close()
 			}
 			if d := time.Since(start); d > 15*time.Second {
 				t.Fatalf("Dial hung for %v against a silent server", d)
