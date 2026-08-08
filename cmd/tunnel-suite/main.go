@@ -183,14 +183,17 @@ func normalizeArgs(argv []string) []string {
 	// Cobra's completion requests (__complete / __completeNoDesc) are hidden
 	// commands cobra registers only at Execute time, so detect them by name
 	// and resolve the command being completed from the following argument.
-	if rest[0] == cobra.ShellCompRequestCmd || rest[0] == cobra.ShellCompNoDescRequestCmd {
+	// The completion marker itself stays in rest (it is passed through
+	// unchanged by the rewriter), so cobra still sees the request.
+	findFrom := rest
+	if len(rest) >= 1 && (rest[0] == cobra.ShellCompRequestCmd || rest[0] == cobra.ShellCompNoDescRequestCmd) {
 		prefixMatch = true
-		if len(rest) >= 2 {
-			if c, _, err := rootCmd.Find(rest[1:]); err == nil && c != nil {
-				target = c
-			}
-		}
-	} else if c, _, err := rootCmd.Find(rest); err == nil && c != nil {
+		findFrom = rest[1:]
+	}
+	// Resolve the invoked command (or the command being completed) so the
+	// rewriter knows its flag names. Falls back to rootCmd for anything
+	// unrecognized (e.g. flag values that look like subcommands).
+	if c, _, err := rootCmd.Find(findFrom); err == nil && c != nil {
 		target = c
 	}
 	out := append([]string(nil), argv[:1]...)
@@ -206,8 +209,7 @@ func normalizeArgs(argv []string) []string {
 // that prefixes a known flag name is rewritten too, so "-pr<TAB>" completes
 // like "--protocol".
 func normalizeSingleDash(args []string, cmd *cobra.Command, prefixMatch bool) []string {
-	known := knownFlagNames(cmd)
-	valueFlags := flagTakesValue(cmd)
+	known, valueFlags := flagShape(cmd)
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -252,43 +254,30 @@ func normalizeSingleDash(args []string, cmd *cobra.Command, prefixMatch bool) []
 	return out
 }
 
-// knownFlagNames returns every flag name defined on cmd and all its
-// subcommands, recursively (local and inherited persistent flags), so the
-// single-dash rewriter knows which tokens are flags.
-func knownFlagNames(cmd *cobra.Command) map[string]bool {
-	names := make(map[string]bool)
-	var walk func(*cobra.Command)
-	walk = func(c *cobra.Command) {
-		if c == nil {
-			return
-		}
-		c.Flags().VisitAll(func(f *pflag.Flag) { names[f.Name] = true })
-		for _, sub := range c.Commands() {
-			walk(sub)
-		}
-	}
-	walk(cmd)
-	return names
-}
-
-// flagTakesValue reports, per flag name, whether the flag consumes a separate
+// flagShape returns, for every flag defined on cmd and all its subcommands
+// (recursively, local and inherited persistent flags), whether the flag name
+// is known to the single-dash rewriter and whether it consumes a separate
 // value token. pflag leaves NoOptDefVal empty on value-taking flags and sets
 // it on booleans (and optional-value flags like --throughput-only), so
 // NoOptDefVal == "" is the value-taking test.
-func flagTakesValue(cmd *cobra.Command) map[string]bool {
-	out := make(map[string]bool)
+func flagShape(cmd *cobra.Command) (known map[string]bool, takesValue map[string]bool) {
+	known = make(map[string]bool)
+	takesValue = make(map[string]bool)
 	var walk func(*cobra.Command)
 	walk = func(c *cobra.Command) {
 		if c == nil {
 			return
 		}
-		c.Flags().VisitAll(func(f *pflag.Flag) { out[f.Name] = f.NoOptDefVal == "" })
+		c.Flags().VisitAll(func(f *pflag.Flag) {
+			known[f.Name] = true
+			takesValue[f.Name] = f.NoOptDefVal == ""
+		})
 		for _, sub := range c.Commands() {
 			walk(sub)
 		}
 	}
 	walk(cmd)
-	return out
+	return known, takesValue
 }
 
 // flagNameHasPrefix reports whether any known flag name starts with prefix.
