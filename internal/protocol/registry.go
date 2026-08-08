@@ -2,9 +2,13 @@ package protocol
 
 import "strings"
 
-// Port offsets relative to --base-port.
+// Port offsets relative to --protocols-base-port. PortControl (+0) is the
+// historical manifest slot: the control port is now configured explicitly
+// (--control-port, defaulting to the protocols base port), so base+PortControl
+// is no longer computed — the constant stays as the +0 anchor of this iota
+// sequence.
 const (
-	PortControl         = iota // +0: manifest / control (TCP)
+	PortControl         = iota // +0: manifest / control (TCP, historical default slot)
 	PortTCP                    // +1
 	PortUDP                    // +2
 	PortTLS                    // +3
@@ -74,6 +78,16 @@ func All() []Protocol {
 		ipsecProto{},
 		l2tpProto{},
 	}
+}
+
+// EffectiveControlPort returns the control/manifest port for a run: the
+// explicitly configured port when non-zero, otherwise the protocols base port
+// (preserving the classic layout where the manifest sits at base+0).
+func EffectiveControlPort(controlPort, protocolsBasePort int) int {
+	if controlPort != 0 {
+		return controlPort
+	}
+	return protocolsBasePort
 }
 
 // PortOffset returns the port offset (relative to the base port) for a

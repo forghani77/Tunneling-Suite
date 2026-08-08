@@ -27,57 +27,67 @@ func TestQuoteArg(t *testing.T) {
 
 func TestServerExecArgs(t *testing.T) {
 	cases := []struct {
-		name                               string
-		listen                             string
-		basePort                           int
-		forward                            bool
-		protocols, password, ss, cert, key string
-		want                               string
+		name                string
+		listen              string
+		protocolsBasePort   int
+		controlPort         int
+		forward             bool
+		protocols, password string
+		ss, cert, key       string
+		want                string
 	}{{
-		name:     "defaults with relay on",
-		listen:   "0.0.0.0",
-		basePort: 10000,
-		forward:  true,
-		want:     "/opt/bin/tunnel-suite server --listen 0.0.0.0 --base-port 10000 --forward",
+		name:              "defaults with relay on",
+		listen:            "0.0.0.0",
+		protocolsBasePort: 10000,
+		forward:           true,
+		want:              "/opt/bin/tunnel-suite server --listen 0.0.0.0 --protocols-base-port 10000 --forward",
 	},
 		{
-			name:     "relay off omits --forward",
-			forward:  false,
-			listen:   "127.0.0.1",
-			basePort: 20000,
-			want:     "/opt/bin/tunnel-suite server --listen 127.0.0.1 --base-port 20000",
+			name:              "relay off omits --forward",
+			forward:           false,
+			listen:            "127.0.0.1",
+			protocolsBasePort: 20000,
+			want:              "/opt/bin/tunnel-suite server --listen 127.0.0.1 --protocols-base-port 20000",
 		},
 		{
-			name:      "protocols and secrets",
-			forward:   true,
-			listen:    "127.0.0.1",
-			basePort:  20000,
-			protocols: "tcp,udp",
-			password:  "s3cret",
-			ss:        "ss-pass",
-			want:      "/opt/bin/tunnel-suite server --listen 127.0.0.1 --base-port 20000 --forward --protocols tcp,udp --password s3cret --ss-password ss-pass",
+			name:              "protocols and secrets",
+			forward:           true,
+			listen:            "127.0.0.1",
+			protocolsBasePort: 20000,
+			protocols:         "tcp,udp",
+			password:          "s3cret",
+			ss:                "ss-pass",
+			want:              "/opt/bin/tunnel-suite server --listen 127.0.0.1 --protocols-base-port 20000 --forward --protocols tcp,udp --password s3cret --ss-password ss-pass",
 		},
 		{
-			name:     "cert/key pair",
-			listen:   "0.0.0.0",
-			basePort: 10000,
-			forward:  true,
-			cert:     "/etc/tls/server.crt",
-			key:      "/etc/tls/server.key",
-			want:     "/opt/bin/tunnel-suite server --listen 0.0.0.0 --base-port 10000 --forward --cert /etc/tls/server.crt --key /etc/tls/server.key",
+			name:              "distinct control port",
+			listen:            "0.0.0.0",
+			protocolsBasePort: 30000,
+			controlPort:       10000,
+			forward:           true,
+			want:              "/opt/bin/tunnel-suite server --listen 0.0.0.0 --protocols-base-port 30000 --control-port 10000 --forward",
 		},
 		{
-			name:     "quoted values",
-			listen:   "0.0.0.0",
-			basePort: 10000,
-			forward:  true,
-			password: "with space",
-			want:     `/opt/bin/tunnel-suite server --listen 0.0.0.0 --base-port 10000 --forward --password "with space"`,
+			name:              "cert/key pair",
+			listen:            "0.0.0.0",
+			protocolsBasePort: 10000,
+			forward:           true,
+			cert:              "/etc/tls/server.crt",
+			key:               "/etc/tls/server.key",
+			want:              "/opt/bin/tunnel-suite server --listen 0.0.0.0 --protocols-base-port 10000 --forward --cert /etc/tls/server.crt --key /etc/tls/server.key",
+		},
+		{
+			name:              "quoted values",
+			listen:            "0.0.0.0",
+			protocolsBasePort: 10000,
+			forward:           true,
+			password:          "with space",
+			want:              `/opt/bin/tunnel-suite server --listen 0.0.0.0 --protocols-base-port 10000 --forward --password "with space"`,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := strings.Join(serverExecArgs("/opt/bin/tunnel-suite", c.listen, c.basePort, c.forward, c.protocols, c.password, c.ss, c.cert, c.key), " ")
+			got := strings.Join(serverExecArgs("/opt/bin/tunnel-suite", c.listen, c.protocolsBasePort, c.controlPort, c.forward, c.protocols, c.password, c.ss, c.cert, c.key), " ")
 			if got != c.want {
 				t.Errorf("got  %q\nwant %q", got, c.want)
 			}
@@ -89,7 +99,7 @@ func TestClientExecArgs(t *testing.T) {
 	cases := []struct {
 		name                 string
 		server               string
-		basePort             int
+		protocolsBasePort    int
 		protocol, mode, bind string
 		localPort            int
 		remoteHost           string
@@ -98,43 +108,43 @@ func TestClientExecArgs(t *testing.T) {
 		want                 string
 	}{
 		{
-			name:       "forward mode",
-			server:     "203.0.113.10",
-			basePort:   10000,
-			protocol:   "tcp",
-			mode:       "forward",
-			bind:       "127.0.0.1",
-			localPort:  8080,
-			remoteHost: "10.0.0.5",
-			remotePort: 80,
-			want:       "/opt/bin/tunnel-suite client --server 203.0.113.10 --base-port 10000 --protocol tcp --mode forward --bind 127.0.0.1 --local-port 8080 --remote-host 10.0.0.5 --remote-port 80",
+			name:              "forward mode",
+			server:            "203.0.113.10",
+			protocolsBasePort: 10000,
+			protocol:          "tcp",
+			mode:              "forward",
+			bind:              "127.0.0.1",
+			localPort:         8080,
+			remoteHost:        "10.0.0.5",
+			remotePort:        80,
+			want:              "/opt/bin/tunnel-suite client --server 203.0.113.10 --protocols-base-port 10000 --protocol tcp --mode forward --bind 127.0.0.1 --local-port 8080 --remote-host 10.0.0.5 --remote-port 80",
 		},
 		{
-			name:      "socks mode omits remote flags",
-			server:    "HOST",
-			basePort:  10000,
-			protocol:  "udp",
-			mode:      "socks",
-			bind:      "127.0.0.1",
-			localPort: 1080,
-			want:      "/opt/bin/tunnel-suite client --server HOST --base-port 10000 --protocol udp --mode socks --bind 127.0.0.1 --local-port 1080",
+			name:              "socks mode omits remote flags",
+			server:            "HOST",
+			protocolsBasePort: 10000,
+			protocol:          "udp",
+			mode:              "socks",
+			bind:              "127.0.0.1",
+			localPort:         1080,
+			want:              "/opt/bin/tunnel-suite client --server HOST --protocols-base-port 10000 --protocol udp --mode socks --bind 127.0.0.1 --local-port 1080",
 		},
 		{
-			name:      "secrets and quoted server",
-			server:    "my host",
-			basePort:  10000,
-			protocol:  "ws",
-			mode:      "socks",
-			bind:      "127.0.0.1",
-			localPort: 1080,
-			password:  "p w",
-			ss:        "ss",
-			want:      `/opt/bin/tunnel-suite client --server "my host" --base-port 10000 --protocol ws --mode socks --bind 127.0.0.1 --local-port 1080 --password "p w" --ss-password ss`,
+			name:              "secrets and quoted server",
+			server:            "my host",
+			protocolsBasePort: 10000,
+			protocol:          "ws",
+			mode:              "socks",
+			bind:              "127.0.0.1",
+			localPort:         1080,
+			password:          "p w",
+			ss:                "ss",
+			want:              `/opt/bin/tunnel-suite client --server "my host" --protocols-base-port 10000 --protocol ws --mode socks --bind 127.0.0.1 --local-port 1080 --password "p w" --ss-password ss`,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := strings.Join(clientExecArgs("/opt/bin/tunnel-suite", c.server, c.basePort, c.protocol, c.mode, c.bind, c.localPort, c.remoteHost, c.remotePort, c.password, c.ss), " ")
+			got := strings.Join(clientExecArgs("/opt/bin/tunnel-suite", c.server, c.protocolsBasePort, c.protocol, c.mode, c.bind, c.localPort, c.remoteHost, c.remotePort, c.password, c.ss), " ")
 			if got != c.want {
 				t.Errorf("got  %q\nwant %q", got, c.want)
 			}

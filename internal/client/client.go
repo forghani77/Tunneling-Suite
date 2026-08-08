@@ -17,11 +17,18 @@ import (
 
 // Config configures the client run.
 type Config struct {
-	Server     string
-	BasePort   int
-	Protocols  []string // empty means every protocol the server offers
-	SSPassword string
-	Password   string // shared secret for anytls / naive
+	Server string
+	// ProtocolsBasePort is the base for protocol dials: each protocol is
+	// dialed at ProtocolsBasePort plus its registry offset (must match the
+	// server's --protocols-base-port).
+	ProtocolsBasePort int
+	// ControlPort is the server's control/manifest (TCP) port. Zero means the
+	// protocols base port, matching the server's default layout. Ignored in
+	// blind mode, which skips the control port entirely.
+	ControlPort int
+	Protocols   []string // empty means every protocol the server offers
+	SSPassword  string
+	Password    string // shared secret for anytls / naive
 	// Blind skips the server's control port (the TCP manifest port). The
 	// server may sit behind a firewall that filters TCP on the control port,
 	// so instead of fetching the manifest every known protocol is probed
@@ -35,6 +42,11 @@ type Config struct {
 	Throughput     []string
 	ThroughputOnly bool
 	benchmark.Config
+}
+
+// controlPort returns the effective control/manifest port.
+func (c Config) controlPort() int {
+	return protocol.EffectiveControlPort(c.ControlPort, c.ProtocolsBasePort)
 }
 
 type manifestEntry struct {
@@ -91,7 +103,7 @@ func Run(cfg Config) (*report.Report, error) {
 			})
 			continue
 		}
-		addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.BasePort+protocol.PortOffset(p)))
+		addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.ProtocolsBasePort+protocol.PortOffset(p)))
 		started := time.Now()
 		fmt.Printf("testing %-12s... ", p.Name())
 		r := benchmark.Run(p, addr, opts, cfg.Config)
@@ -100,12 +112,13 @@ func Run(cfg Config) (*report.Report, error) {
 	}
 
 	rep := &report.Report{
-		GeneratedAt: time.Now(),
-		Server:      cfg.Server,
-		BasePort:    cfg.BasePort,
-		ClientIP:    ipString(clientIP),
-		Config:      benchmark.ReportConfig(cfg.Config),
-		Results:     results,
+		GeneratedAt:       time.Now(),
+		Server:            cfg.Server,
+		ProtocolsBasePort: cfg.ProtocolsBasePort,
+		ControlPort:       cfg.controlPort(),
+		ClientIP:          ipString(clientIP),
+		Config:            benchmark.ReportConfig(cfg.Config),
+		Results:           results,
 	}
 	for _, r := range results {
 		rep.Summary.Total++
@@ -133,7 +146,7 @@ func Run(cfg Config) (*report.Report, error) {
 				})
 				continue
 			}
-			addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.BasePort+protocol.PortOffset(p)))
+			addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.ProtocolsBasePort+protocol.PortOffset(p)))
 			started := time.Now()
 			fmt.Printf("throughput %-10s... ", p.Name())
 			r := benchmark.RunThroughput(p, addr, opts, cfg.Config)
@@ -188,7 +201,7 @@ func protocolEntries(cfg Config) (map[string]manifestEntry, net.IP, error) {
 // fetchManifest queries the server's control port for its protocol manifest
 // and returns the client's observed IP address.
 func fetchManifest(cfg Config) (map[string]manifestEntry, net.IP, error) {
-	addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.BasePort+protocol.PortControl))
+	addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.controlPort()))
 	c, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot reach server control port %s: %w (is the server running?)", addr, err)

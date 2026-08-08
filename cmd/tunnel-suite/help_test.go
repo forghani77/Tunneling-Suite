@@ -46,8 +46,8 @@ func TestHelpRendersSingleDash(t *testing.T) {
 	// no flags (they live on its subcommands), so only the no-double-dash
 	// assertion applies there.
 	perCommandFlags := map[string][]string{
-		"client":         {"-server", "-blind", "-base-port", "-local-port"},
-		"server":         {"-listen", "-base-port", "-forward"},
+		"client":         {"-server", "-blind", "-protocols-base-port", "-control-port", "-local-port"},
+		"server":         {"-listen", "-protocols-base-port", "-control-port", "-forward"},
 		"install":        nil,
 		"install client": {"-server", "-mode", "-local-port", "-uninstall"},
 		"uninstall":      {"-user", "-dry-run"},
@@ -74,8 +74,8 @@ func TestUsageRendersSingleDash(t *testing.T) {
 			if strings.Contains(out, "--") {
 				t.Errorf("usage for %q still contains '--':\n%s", path, out)
 			}
-			if !strings.Contains(out, "-base-port") {
-				t.Errorf("usage for %q missing '-base-port':\n%s", path, out)
+			if !strings.Contains(out, "-protocols-base-port") {
+				t.Errorf("usage for %q missing '-protocols-base-port':\n%s", path, out)
 			}
 		})
 	}

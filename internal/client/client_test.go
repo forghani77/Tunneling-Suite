@@ -37,6 +37,41 @@ func TestBlindEntriesCoversAllProtocols(t *testing.T) {
 	}
 }
 
+// TestFetchManifestUsesControlPort verifies the manifest is fetched from the
+// --control-port when it differs from the protocols base port: the fetch must
+// dial the former, ignoring the latter for the control exchange.
+func TestFetchManifestUsesControlPort(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		buf := make([]byte, 64)
+		if _, err := c.Read(buf); err != nil {
+			return
+		}
+		_, _ = c.Write([]byte(`{"entries":[{"name":"udp","port":30002,"kind":"datagram","needs_root":false,"available":true}]}`))
+	}()
+
+	// Protocols base port 30000 (nothing listens there); control port = ln's
+	// port. A config that dialed the base port would fail to connect.
+	entries, _, err := fetchManifest(Config{Server: "127.0.0.1", ProtocolsBasePort: 30000, ControlPort: port})
+	if err != nil {
+		t.Fatalf("fetchManifest with distinct control port: %v", err)
+	}
+	if _, ok := entries["udp"]; !ok {
+		t.Errorf("manifest entries missing udp: %v", entries)
+	}
+}
+
 // TestFetchManifestSilentControlPort verifies the manifest fetch fails
 // promptly when the control port accepts TCP but never answers (an unrelated
 // service squatting on base+0 would otherwise hang the client forever).
@@ -61,7 +96,7 @@ func TestFetchManifestSilentControlPort(t *testing.T) {
 	}()
 
 	start := time.Now()
-	_, _, err = fetchManifest(Config{Server: "127.0.0.1", BasePort: ln.Addr().(*net.TCPAddr).Port})
+	_, _, err = fetchManifest(Config{Server: "127.0.0.1", ProtocolsBasePort: ln.Addr().(*net.TCPAddr).Port})
 	if err == nil {
 		t.Fatal("fetchManifest succeeded against a silent control server")
 	}
@@ -125,12 +160,12 @@ func TestBlindThroughputRunSkipsControlPort(t *testing.T) {
 
 	start := time.Now()
 	rep, err := Run(Config{
-		Server:         "127.0.0.1",
-		BasePort:       base,
-		Blind:          true,
-		Throughput:     []string{"udp"},
-		ThroughputOnly: true,
-		Config:         cfg,
+		Server:            "127.0.0.1",
+		ProtocolsBasePort: base,
+		Blind:             true,
+		Throughput:        []string{"udp"},
+		ThroughputOnly:    true,
+		Config:            cfg,
 	})
 	if err != nil {
 		t.Fatalf("blind throughput run failed (did it dial the control port?): %v", err)

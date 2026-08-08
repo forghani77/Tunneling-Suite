@@ -389,11 +389,15 @@ func quoteArg(s string) string {
 }
 
 // serverExecArgs builds the ExecStart argv for the server from its flags.
-// Used by `install server`.
-func serverExecArgs(exe, listen string, basePort int, forward bool, protocols, password, ssPass, cert, key string) []string {
+// Used by `install server`. The control port is only written when set (the
+// server's zero default is the protocols base port).
+func serverExecArgs(exe, listen string, protocolsBasePort, controlPort int, forward bool, protocols, password, ssPass, cert, key string) []string {
 	args := []string{quoteArg(exe), "server",
 		"--listen", quoteArg(listen),
-		"--base-port", fmt.Sprintf("%d", basePort)}
+		"--protocols-base-port", fmt.Sprintf("%d", protocolsBasePort)}
+	if controlPort != 0 {
+		args = append(args, "--control-port", fmt.Sprintf("%d", controlPort))
+	}
 	if forward {
 		args = append(args, "--forward")
 	}
@@ -413,11 +417,12 @@ func serverExecArgs(exe, listen string, basePort int, forward bool, protocols, p
 }
 
 // clientExecArgs builds the ExecStart argv for a forwarding client from its
-// flags. Used by `install client`.
-func clientExecArgs(exe, server string, basePort int, protocol, mode, bind string, localPort int, remoteHost string, remotePort int, password, ssPass string) []string {
+// flags. Used by `install client`. Forwarding dials the tunnel protocol
+// directly and never uses the control port.
+func clientExecArgs(exe, server string, protocolsBasePort int, protocol, mode, bind string, localPort int, remoteHost string, remotePort int, password, ssPass string) []string {
 	args := []string{quoteArg(exe), "client",
 		"--server", quoteArg(server),
-		"--base-port", fmt.Sprintf("%d", basePort),
+		"--protocols-base-port", fmt.Sprintf("%d", protocolsBasePort),
 		"--protocol", protocol,
 		"--mode", mode,
 		"--bind", quoteArg(bind),
@@ -473,21 +478,23 @@ func validateServerProtocols(protocols string) error {
 
 func installServerCmd() *cobra.Command {
 	var (
-		o         installOpts
-		listen    string
-		basePort  int
-		forward   bool
-		password  string
-		ssPass    string
-		cert      string
-		key       string
-		protocols string
+		o                 installOpts
+		listen            string
+		protocolsBasePort int
+		controlPort       int
+		forward           bool
+		password          string
+		ssPass            string
+		cert              string
+		key               string
+		protocols         string
 	)
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Install the tunnel-suite server as a systemd service",
-		Example: `  sudo tunnel-suite install server --base-port 10000
-  tunnel-suite install server --user --base-port 20000 --dry-run`,
+		Example: `  sudo tunnel-suite install server --protocols-base-port 10000
+  tunnel-suite install server --user --protocols-base-port 20000 --dry-run
+  sudo tunnel-suite install server --protocols-base-port 30000 --control-port 10000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.overall = "server"
 			if !unitNameRe.MatchString(o.name) {
@@ -500,7 +507,7 @@ func installServerCmd() *cobra.Command {
 			if err != nil || exe == "" {
 				return fmt.Errorf("cannot determine the binary path (os.Executable)")
 			}
-			argsStr := serverExecArgs(exe, listen, basePort, forward, protocols, password, ssPass, cert, key)
+			argsStr := serverExecArgs(exe, listen, protocolsBasePort, controlPort, forward, protocols, password, ssPass, cert, key)
 			unit := unitTemplate("tunnel-suite server (test + forwarding server)",
 				strings.Join(argsStr, " "), o.user)
 			return writeUnit(o, unit)
@@ -512,7 +519,8 @@ func installServerCmd() *cobra.Command {
 	f.BoolVar(&o.uninstall, "uninstall", false, "remove the installed service")
 	f.StringVar(&o.name, "name", "tunnel-suite-server", "systemd unit name")
 	f.StringVar(&listen, "listen", "0.0.0.0", "address the server binds")
-	f.IntVar(&basePort, "base-port", 10000, "base port for the server")
+	f.IntVar(&protocolsBasePort, "protocols-base-port", 10000, "base port for protocol listeners")
+	f.IntVar(&controlPort, "control-port", 0, "control/manifest port (default: the protocols base port)")
 	f.BoolVar(&forward, "forward", true, "enable forwarding (relay) sessions on the server")
 	f.StringVar(&protocols, "protocols", "", "comma-separated protocol subset to serve (default: all)")
 	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp")
@@ -525,17 +533,17 @@ func installServerCmd() *cobra.Command {
 
 func installClientCmd() *cobra.Command {
 	var (
-		o          installOpts
-		server     string
-		basePort   int
-		protocol   string
-		mode       string
-		bind       string
-		localPort  int
-		remoteHost string
-		remotePort int
-		password   string
-		ssPass     string
+		o                 installOpts
+		server            string
+		protocolsBasePort int
+		protocol          string
+		mode              string
+		bind              string
+		localPort         int
+		remoteHost        string
+		remotePort        int
+		password          string
+		ssPass            string
 	)
 	cmd := &cobra.Command{
 		Use:   "client",
@@ -570,7 +578,7 @@ remove the service again.`,
 			if err != nil || exe == "" {
 				return fmt.Errorf("cannot determine the binary path (os.Executable)")
 			}
-			argsStr := clientExecArgs(exe, server, basePort, protocol, mode, bind, localPort, remoteHost, remotePort, password, ssPass)
+			argsStr := clientExecArgs(exe, server, protocolsBasePort, protocol, mode, bind, localPort, remoteHost, remotePort, password, ssPass)
 			desc := fmt.Sprintf("tunnel-suite %s client (%s tunnel)", mode, protocol)
 			if o.uninstall {
 				// --uninstall ignores the unit content; render a clean one for
@@ -588,7 +596,7 @@ remove the service again.`,
 	f.BoolVar(&o.uninstall, "uninstall", false, "remove the installed service")
 	f.StringVar(&o.name, "name", "tunnel-suite-client", "systemd unit name")
 	f.StringVar(&server, "server", "", "server host or IP (required)")
-	f.IntVar(&basePort, "base-port", 10000, "base port (must match server)")
+	f.IntVar(&protocolsBasePort, "protocols-base-port", 10000, "protocols base port (must match server)")
 	f.StringVar(&protocol, "protocol", "", "tunnel protocol, e.g. tcp, udp, ws (required)")
 	f.StringVar(&mode, "mode", "", "forward or socks (required)")
 	f.StringVar(&bind, "bind", "127.0.0.1", "local bind address")

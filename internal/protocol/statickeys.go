@@ -7,9 +7,10 @@ import "encoding/hex"
 // address: 10.9.0.1, 10.11.0.1, 10.12.0.1). In normal mode the TCP handshake
 // reports it to the client; in blind mode (TCP blocked) the client uses this
 // constant directly. It must match on both ends, like the keys below. Note it
-// must stay outside the outer base-port range (base+0 … base+33) so the echo
-// bind can never collide with a wildcard outer listener on the same host
-// (with the default --base-port 10000 the outer ports are 10000–10033).
+// must stay outside the outer protocols-base-port range (base+0 … base+33)
+// so the echo bind can never collide with a wildcard outer listener on the
+// same host (with the default --protocols-base-port 10000 the outer ports
+// are 10000–10033).
 const innerEchoPort = 34567
 
 // staticKeys holds one protocol family's embedded, well-known Curve25519

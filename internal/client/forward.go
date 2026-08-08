@@ -17,16 +17,20 @@ import (
 // and carried through the chosen protocol tunnel to a server running with
 // --forward, which dials the destination and relays.
 type ForwardConfig struct {
-	Server     string
-	BasePort   int
-	Protocol   string // tunnel protocol name (e.g. "tcp", "udp", "ws", ...)
-	Password   string
-	SSPassword string
-	Mode       string // "forward" (fixed target) or "socks" (SOCKS5 proxy)
-	Bind       string // local bind address, default "127.0.0.1"
-	LocalPort  int
-	RemoteHost string // forward mode only
-	RemotePort int    // forward mode only
+	Server string
+	// ProtocolsBasePort is the base for the tunnel dial: the chosen protocol
+	// is dialed at ProtocolsBasePort plus its registry offset (must match the
+	// server's --protocols-base-port). Forwarding never uses the control
+	// port.
+	ProtocolsBasePort int
+	Protocol          string // tunnel protocol name (e.g. "tcp", "udp", "ws", ...)
+	Password          string
+	SSPassword        string
+	Mode              string // "forward" (fixed target) or "socks" (SOCKS5 proxy)
+	Bind              string // local bind address, default "127.0.0.1"
+	LocalPort         int
+	RemoteHost        string // forward mode only
+	RemotePort        int    // forward mode only
 }
 
 // RunForward runs the forwarding endpoint until killed. It listens on the
@@ -51,7 +55,7 @@ func RunForward(cfg ForwardConfig) error {
 	if !ok {
 		return fmt.Errorf("unknown protocol %q (known: %v)", cfg.Protocol, protocol.Names())
 	}
-	addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.BasePort+protocol.PortOffset(p)))
+	addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.ProtocolsBasePort+protocol.PortOffset(p)))
 	opts := protocol.Options{
 		Password:   cfg.Password,
 		SSPassword: cfg.SSPassword,
@@ -61,8 +65,8 @@ func RunForward(cfg ForwardConfig) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", net.JoinHostPort(cfg.Bind, strconv.Itoa(cfg.LocalPort)), err)
 	}
-	fmt.Printf("tunnel-suite %s → %s via %s on %s (base port %d)\n",
-		cfg.Mode, cfg.Server, p.Name(), ln.Addr(), cfg.BasePort)
+	fmt.Printf("tunnel-suite %s → %s via %s on %s (protocols base port %d)\n",
+		cfg.Mode, cfg.Server, p.Name(), ln.Addr(), cfg.ProtocolsBasePort)
 	if cfg.Mode == "forward" {
 		fmt.Printf("forwarding to %s\n", net.JoinHostPort(cfg.RemoteHost, strconv.Itoa(cfg.RemotePort)))
 	} else {

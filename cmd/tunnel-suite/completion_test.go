@@ -115,7 +115,7 @@ func TestRunCompletion(t *testing.T) {
 		{name: "single dash token offers single dash", argv: []string{"tunnel-suite", "__complete", "client", "-pr"}, wantHas: "-protocol\t", wantNot: "--protocol\t"},
 		{name: "double dash token keeps double dash", argv: []string{"tunnel-suite", "__complete", "client", "--pr"}, wantHas: "--protocol\t", wantNot: "-protocol\t"},
 		{name: "single dash forward flag", argv: []string{"tunnel-suite", "__complete", "server", "-for"}, wantHas: "-forward\t", wantNot: "--forward\t"},
-		{name: "bare single dash offers every flag single-dash", argv: []string{"tunnel-suite", "__complete", "client", "-"}, wantHas: "-base-port\t", wantNot: "--base-port\t"},
+		{name: "bare single dash offers every flag single-dash", argv: []string{"tunnel-suite", "__complete", "client", "-"}, wantHas: "-protocols-base-port\t", wantNot: "--protocols-base-port\t"},
 		{name: "no-desc request also single-dash", argv: []string{"tunnel-suite", "__completeNoDesc", "client", "-pr"}, wantHas: "-protocol", wantNot: "--protocol"},
 		{name: "throughput-only completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-throughput-only", "any"}, wantHas: "anytls"},
 		{name: "throughput-only = form completes protocol values", argv: []string{"tunnel-suite", "__complete", "client", "-throughput-only=gr"}, wantHas: "gre"},

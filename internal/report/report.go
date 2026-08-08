@@ -80,7 +80,8 @@ type ThroughputResult struct {
 type Report struct {
 	GeneratedAt       time.Time          `json:"generated_at"`
 	Server            string             `json:"server"`
-	BasePort          int                `json:"base_port"`
+	ProtocolsBasePort int                `json:"protocols_base_port"`
+	ControlPort       int                `json:"control_port"`
 	ClientIP          string             `json:"client_ip,omitempty"`
 	Config            Config             `json:"config"`
 	Results           []Result           `json:"results"`

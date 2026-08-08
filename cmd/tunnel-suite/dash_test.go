@@ -43,8 +43,8 @@ func TestNormalizeSingleDash(t *testing.T) {
 		{
 			name: "equals form",
 			path: "client",
-			args: []string{"client", "-protocol=tcp", "-base-port=20000"},
-			want: []string{"client", "--protocol=tcp", "--base-port=20000"},
+			args: []string{"client", "-protocol=tcp", "-protocols-base-port=20000"},
+			want: []string{"client", "--protocol=tcp", "--protocols-base-port=20000"},
 		},
 		{
 			name: "double dash untouched",

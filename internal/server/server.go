@@ -19,8 +19,14 @@ import (
 
 // Config configures the server.
 type Config struct {
-	Listen      string // bind host, default "0.0.0.0"
-	BasePort    int
+	Listen string // bind host, default "0.0.0.0"
+	// ProtocolsBasePort is the base for protocol listeners: each protocol
+	// binds ProtocolsBasePort plus its registry offset.
+	ProtocolsBasePort int
+	// ControlPort is the control/manifest (TCP) port. Zero means the
+	// protocols base port, preserving the classic layout where the manifest
+	// sits at base+0 and the protocols start at base+1.
+	ControlPort int
 	Protocols   []string // empty means all
 	TLSCertFile string
 	TLSKeyFile  string
@@ -32,6 +38,11 @@ type Config struct {
 	// every session is echo-only and the server can never be used as an open
 	// relay. Benchmark sessions always keep working either way.
 	Forward bool
+}
+
+// controlPort returns the effective control/manifest port.
+func (c Config) controlPort() int {
+	return protocol.EffectiveControlPort(c.ControlPort, c.ProtocolsBasePort)
 }
 
 type entry struct {
@@ -58,11 +69,21 @@ func Run(cfg Config) error {
 		return err
 	}
 
+	// The control listener is TCP, so it can only collide with a protocol
+	// that binds TCP at the same port (stream protocols and the wg-family
+	// control plane; UDP protocol offsets live in a separate namespace and
+	// cannot conflict). Catch that up front with a clear message instead of
+	// an opaque "address already in use" from the bind.
+	ctlPort := cfg.controlPort()
+	if name, ok := usedTCPPorts(cfg.ProtocolsBasePort, protos)[ctlPort]; ok {
+		return fmt.Errorf("control port %d collides with the %s protocol listener (protocols base port %d) — pick a free --control-port or shift --protocols-base-port", ctlPort, name, cfg.ProtocolsBasePort)
+	}
+
 	// Ordered map of name -> entry (mirrors registry order).
 	names := make([]string, 0, len(protos))
 	entries := make(map[string]*entry)
 	for _, p := range protos {
-		addr := protocol.JoinHostPort(cfg.Listen, cfg.BasePort+protocol.PortOffset(p))
+		addr := protocol.JoinHostPort(cfg.Listen, cfg.ProtocolsBasePort+protocol.PortOffset(p))
 		ps, err := p.Listen(addr, opts)
 		if err != nil {
 			log.Printf("protocol %-12s unavailable: %v", p.Name(), err)
@@ -77,7 +98,7 @@ func Run(cfg Config) error {
 	}
 
 	// Control/manifest listener.
-	ctlAddr := protocol.JoinHostPort(cfg.Listen, cfg.BasePort+protocol.PortControl)
+	ctlAddr := protocol.JoinHostPort(cfg.Listen, ctlPort)
 	ctl, err := net.Listen("tcp", ctlAddr)
 	if err != nil {
 		for _, e := range entries {
@@ -99,7 +120,7 @@ func Run(cfg Config) error {
 		}
 	}()
 
-	log.Printf("tunnel-suite server ready on %s, base port %d", cfg.Listen, cfg.BasePort)
+	log.Printf("tunnel-suite server ready on %s (protocols base port %d, control port %d)", cfg.Listen, cfg.ProtocolsBasePort, ctlPort)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -149,7 +170,7 @@ func handleControl(c net.Conn, cfg Config, entries map[string]*entry, names []st
 		}
 		out = append(out, map[string]any{
 			"name":       e.Proto.Name(),
-			"port":       cfg.BasePort + protocol.PortOffset(e.Proto),
+			"port":       cfg.ProtocolsBasePort + protocol.PortOffset(e.Proto),
 			"kind":       e.Proto.Kind().String(),
 			"needs_root": e.Proto.NeedsRoot(),
 			"available":  e.Available,
@@ -157,6 +178,28 @@ func handleControl(c net.Conn, cfg Config, entries map[string]*entry, names []st
 		})
 	}
 	_ = json.NewEncoder(c).Encode(map[string]any{"entries": out})
+}
+
+// usedTCPPorts returns the absolute ports the enabled protocols bind TCP
+// listeners on (the only ones that can collide with the TCP control port):
+// stream protocols at their offset and the wg-family's control-plane
+// listener. UDP protocol offsets are deliberately absent — a TCP listener and
+// a UDP listener on the same port coexist fine in the kernel.
+//
+// Keep this list in sync with the registry: any protocol whose Listen binds a
+// TCP socket at its port offset must be added here, or a control-port
+// collision with it would surface as an opaque "address already in use"
+// instead of this clear error.
+func usedTCPPorts(base int, protos []protocol.Protocol) map[int]string {
+	used := make(map[int]string)
+	for _, p := range protos {
+		switch p.Name() {
+		case "tcp", "tls", "shadowsocks", "http", "https", "ws", "wss", "anytls", "naive", "smtp",
+			"wireguard", "amnezia", "amnezia2":
+			used[base+protocol.PortOffset(p)] = p.Name()
+		}
+	}
+	return used
 }
 
 // selectProtocols resolves requested protocol names against the registry.

@@ -184,10 +184,10 @@ Notes:
 go build -o tunnel-suite ./cmd/tunnel-suite
 
 # machine A (the server)
-sudo ./tunnel-suite server --listen 0.0.0.0 --base-port 10000
+sudo ./tunnel-suite server --listen 0.0.0.0 --protocols-base-port 10000
 
 # machine B (the client)
-./tunnel-suite client --server <server-ip> --base-port 10000
+./tunnel-suite client --server <server-ip> --protocols-base-port 10000
 ```
 
 On the client you'll see live progress, a summary table, and a JSON report:
@@ -218,9 +218,11 @@ The examples below use the conventional double-dash spelling.
 
 ```
 tunnel-suite server [flags]
-  --listen string      address to bind (default "0.0.0.0")
-  --base-port int      base port; each protocol uses base+offset (default 10000)
-  --protocols string   comma-separated subset (default: all)
+  --listen string            address to bind (default "0.0.0.0")
+  --protocols-base-port int  base port for protocol listeners; each protocol
+                             uses protocols-base-port+offset (default 10000)
+  --control-port int         control/manifest port (default: the protocols base port)
+  --protocols string         comma-separated subset (default: all)
   --cert, --key        TLS certificate pair (default: ephemeral self-signed)
   --ss-password string Shadowsocks password (must match the client)
   --password string    shared secret for anytls/naive (must match the client)
@@ -231,9 +233,11 @@ tunnel-suite server [flags]
 
 ```
 tunnel-suite client [flags]
-  --server string      server host or IP (required)
-  --base-port int      base port, must match the server (default 10000)
-  --protocols string   comma-separated subset (default: everything the server offers)
+  --server string            server host or IP (required)
+  --protocols-base-port int  protocols base port, must match the server (default 10000)
+  --control-port int         control/manifest port (default: the protocols base
+                             port; must match the server when set)
+  --protocols string         comma-separated subset (default: everything the server offers)
   --pings int          probes per phase per protocol (default 50)
   --rtt-size int       latency probe size in bytes (default 64)
   --loss-size int      loss probe size in bytes (default 1200)
@@ -321,7 +325,7 @@ Use the `install` subcommand to write a systemd unit and start it with
 `--dry-run` to preview the unit without touching the system):
 
 ```sh
-sudo tunnel-suite install server --base-port 20000
+sudo tunnel-suite install server --protocols-base-port 20000
 sudo tunnel-suite install client --server HOST --protocol tcp \
   --mode forward --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
 tunnel-suite install server --dry-run                    # preview only
@@ -385,8 +389,8 @@ root-free. `--dry-run` prints the exact unit and commands either way.
 ### Blind mode (TCP fully blocked)
 
 The client normally fetches the server's protocol manifest from the control
-port (`base+0`, TCP). `--blind` skips that, probes every protocol at its
-standard base-port offset, and — for `wireguard`/`amnezia`/`amnezia2` — also
+port (TCP). `--blind` skips that, probes every protocol at its standard
+protocols-base-port offset, and — for `wireguard`/`amnezia`/`amnezia2` — also
 skips the TCP key-exchange handshake: both ends use **embedded known keys**
 and a **fixed inner echo port**, so those tunnels establish over UDP alone.
 The `--throughput` speed test dials through the same path, so in blind mode
@@ -400,6 +404,16 @@ the known keys are public constants compiled into the binary — the harness
 is a benchmark tool, not a secure VPN.
 
 ### Port layout
+
+Two independent knobs place the listeners: `--protocols-base-port` anchors the
+protocol ports (each protocol binds `protocols-base-port` plus its offset
+below), and `--control-port` is the manifest's TCP port. The control port
+defaults to the protocols base port, so the classic layout is unchanged:
+manifest at `base+0`, protocols starting at `base+1`. Pass `--control-port`
+to move the manifest independently — e.g. a fixed public control port while
+the protocol ports shift freely, or the other way around. The server refuses
+to start if the control port collides with a protocol's TCP listener, and the
+JSON report records both (`protocols_base_port`, `control_port`).
 
 | offset | use                          |
 |-------:|------------------------------|
@@ -458,7 +472,7 @@ reports the achieved **upload** (client→server) and **download** (server→cli
 echo) rates in Mbps, plus frame loss and the volume transferred:
 
 ```
-tunnel-suite client --server <ip> --base-port 10000 --throughput tcp,wireguard --throughput-time 10
+tunnel-suite client --server <ip> --protocols-base-port 10000 --throughput tcp,wireguard --throughput-time 10
 
 THROUGHPUT — echo test, 10.0s @ 60000B frames
 PROTOCOL  KIND  STATUS  UPLOAD     DOWNLOAD   LOSS    DATA
@@ -469,7 +483,7 @@ To skip the standard benchmark entirely, `--throughput-only` takes the list
 directly (bare, it reuses the `--throughput` list):
 
 ```
-tunnel-suite client --server <ip> --base-port 10000 --throughput-only tcp,wireguard --throughput-time 10
+tunnel-suite client --server <ip> --protocols-base-port 10000 --throughput-only tcp,wireguard --throughput-time 10
 ```
 
 A typical full run — benchmark **all** protocols (the client default is
@@ -477,10 +491,10 @@ everything the server offers) and speed-test a chosen set:
 
 ```sh
 # on the server
-sudo tunnel-suite server --base-port 10000
+sudo tunnel-suite server --protocols-base-port 10000
 
 # on the client: benchmark all protocols + speed-test a chosen set
-sudo tunnel-suite client --server <server-ip> --base-port 10000 \
+sudo tunnel-suite client --server <server-ip> --protocols-base-port 10000 \
   --throughput tcp,udp,icmp,icmpv6,gre,ipip,sit,tls,quic \
   --throughput-time 5
 ```
@@ -492,7 +506,7 @@ sudo tunnel-suite client --server <server-ip> --base-port 10000 \
 > their names to `--throughput`:
 >
 > ```sh
-> tunnel-suite client --server <server-ip> --base-port 10000 \
+> tunnel-suite client --server <server-ip> --protocols-base-port 10000 \
 >   --throughput tcp,udp,icmp,icmpv6,gre,ipip,sit,tls,quic,wireguard,amnezia,amnezia2 \
 >   --throughput-time 5
 > ```
