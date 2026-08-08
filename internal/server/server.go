@@ -194,7 +194,7 @@ func usedTCPPorts(base int, protos []protocol.Protocol) map[int]string {
 	used := make(map[int]string)
 	for _, p := range protos {
 		switch p.Name() {
-		case "tcp", "tls", "shadowsocks", "http", "https", "ws", "wss", "anytls", "naive", "smtp",
+		case "tcp", "tls", "shadowsocks", "http", "https", "ws", "wss", "anytls", "naive", "smtp", "noise",
 			"wireguard", "amnezia", "amnezia2":
 			used[base+protocol.PortOffset(p)] = p.Name()
 		}

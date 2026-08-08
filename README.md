@@ -43,6 +43,7 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `anytls`     | stream    | AnyTLS — TLS session protocol from anytls-go             | no            |
 | `naive`      | stream    | NaiveProxy — TLS + HTTP/2 CONNECT + padding (pure Go)    | no            |
 | `smtp`       | stream      | SMTP tunnel — fake Postfix handshake then raw stream     | no            |
+| `noise`      | stream      | Noise NNpsk0 record layer over TCP, keyed from `--password` | no          |
 
 Notes:
 
@@ -166,16 +167,30 @@ Notes:
   smtp-tunnel-proxy client can authenticate against the Go server and vice
   versa. The harness only exercises the echo path, not the multiplexed
   CONNECT/DATA/CLOSE proxying frames.
+- `noise` is a TCP tunnel wrapped in a **Noise NNpsk0** record layer
+  (`github.com/flynn/noise`, X25519 + ChaCha20-Poly1305 + SHA-256). On the
+  wire the session is two short bursts of random-looking bytes (the client's
+  32-byte ephemeral public key, then the server's key-and-payload message)
+  followed by an encrypted byte stream that looks the same — no TLS
+  ClientHello, no recognisable protocol, nothing for deep packet inspection
+  to fingerprint. The 32-byte pre-shared key is derived from `--password`
+  (default `tunnel-suite`), mixed into the handshake from the first message,
+  so a peer without the token cannot even complete the handshake: the server
+  stays silent and a port scan finds a dead port rather than a service.
+  Costs a little more CPU than plain TCP for the encryption. Because the
+  whole tunnel runs over plain TCP with no separate key-exchange plane, it
+  works unchanged in `--blind` mode.
 - If a protocol can't start (no privileges, no module), the server reports it
   unavailable and the client marks it **skipped** with the reason.
 - `bip`, `h3`, `ss`, `wg`, `awg`/`amneziawg`, `awg2`, `l2tap`/`l2`,
   `http-connect`/`httptunnel`, `websocket`/`wstunnel`,
   `secure-websocket`/`wss-tunnel`, `any-tls`, `naiveproxy`, `icmp6`, `icmp4`,
-  `ping`, `six-to-four`/`sixfour`/`six2four`, and the common misspellings
+  `ping`, `six-to-four`/`sixfour`/`six2four`, `nnpsk0`/`noisepsk`, and the
+  common misspellings
   `amnesia`/`amnesia2`/`amensia`/`amensia2` are accepted as aliases
   (`awg` → `amnezia`, `awg2` → `amnezia2`, `bip` → `sit`, `icmp6` →
   `icmpv6`, `icmp4`/`ping` → `icmp`, `six-to-four` → `6to4`, `l2tap` →
-  `tap`, `naiveproxy` → `naive`, ...).
+  `tap`, `naiveproxy` → `naive`, `nnpsk0` → `noise`, ...).
 
 ## Quick start
 
@@ -225,7 +240,7 @@ tunnel-suite server [flags]
   --protocols string         comma-separated subset (default: all)
   --cert, --key        TLS certificate pair (default: ephemeral self-signed)
   --ss-password string Shadowsocks password (must match the client)
-  --password string    shared secret for anytls/naive (must match the client)
+  --password string    shared secret for anytls/naive/noise (must match the client)
   --forward            enable relay sessions for client --mode forward|socks
 ```
 
@@ -245,7 +260,7 @@ tunnel-suite client [flags]
   --timeout float      per-protocol budget in seconds (default 20)
   --json string        JSON report path (default report-<timestamp>.json)
   --ss-password string Shadowsocks password (must match the server)
-  --password string    shared secret for anytls/naive (must match the server)
+  --password string    shared secret for anytls/naive/noise (must match the server)
   --throughput string  comma-separated protocols to run a throughput speed
                        test against (default: none)
   --throughput-only [list]
@@ -456,6 +471,7 @@ JSON report records both (`protocols_base_port`, `control_port`).
 | +31       | gue (UDP)                              |
 | +32       | ipsec (UDP, ESP NAT-T)                  |
 | +33       | l2tp (UDP, L2TPv3 data messages)         |
+| +34       | noise (TCP)                              |
 
 ## How a test works
 
@@ -577,7 +593,7 @@ internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         h3, kcp, shadowsocks, gre, ipip, sit, 6to4, geneve,
                         vxlan, vxlan-gpe, gue, ipsec, l2tp, icmp, icmpv6,
                         wireguard, amnezia, amnezia2, tap,
-                        http, https, ws, wss, anytls, naive, smtp)
+                        http, https, ws, wss, anytls, naive, smtp, noise)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)
 internal/report/        result model, terminal table, JSON serialization
 internal/server/        server orchestration: listeners, echo loops, manifest
