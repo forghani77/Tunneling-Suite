@@ -19,7 +19,9 @@ func (tcpProto) Listen(addr string, opts Options) (ProtoServer, error) {
 }
 
 func (tcpProto) Dial(addr string, opts Options) (Tunnel, error) {
-	c, err := net.Dial("tcp", addr)
+	// Bounded: a firewall that drops SYNs (instead of refusing) would
+	// otherwise hang the dial forever.
+	c, err := net.DialTimeout("tcp", addr, connTimeout)
 	if err != nil {
 		return nil, err
 	}

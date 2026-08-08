@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"crypto/tls"
+	"net"
 )
 
 // tlsProto tunnels bytes over TLS 1.3 (or the highest mutually supported
@@ -28,9 +29,12 @@ func (tlsProto) Listen(addr string, opts Options) (ProtoServer, error) {
 
 func (tlsProto) Dial(addr string, opts Options) (Tunnel, error) {
 	// The harness owns both ends and uses an ephemeral self-signed cert, so
-	// the client deliberately skips certificate validation.
+	// the client deliberately skips certificate validation. DialWithDialer
+	// bounds the TCP connect and the TLS handshake together, so a service
+	// squatting on the port that accepts TCP but never speaks TLS cannot
+	// hang the probe forever.
 	cfg := &tls.Config{InsecureSkipVerify: true}
-	c, err := tls.Dial("tcp", addr, cfg)
+	c, err := tls.DialWithDialer(&net.Dialer{Timeout: connTimeout}, "tcp", addr, cfg)
 	if err != nil {
 		return nil, err
 	}

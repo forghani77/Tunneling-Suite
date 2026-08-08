@@ -52,6 +52,34 @@ func TestWireguardDialSilentServer(t *testing.T) {
 	}
 }
 
+// TestStreamDialSilentServer verifies the stream-protocol handshakes fail
+// promptly against a silent control server: http reads the CONNECT response,
+// https/tls run the TLS handshake, naive the h2 TLS dial. All used to hang
+// forever — reported as the blind test hanging on http.
+func TestStreamDialSilentServer(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		p    Protocol
+	}{
+		{"http", httpProto{}},
+		{"https", httpsProto{}},
+		{"naive", naiveProto{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel() // each waits out the 10s dial/handshake deadline
+			ln := silentListener(t)
+			start := time.Now()
+			_, err := tc.p.Dial(ln.Addr().String(), Options{})
+			if err == nil {
+				t.Fatal("Dial succeeded against a silent server")
+			}
+			if d := time.Since(start); d > 15*time.Second {
+				t.Fatalf("Dial hung for %v against a silent server", d)
+			}
+		})
+	}
+}
+
 // TestAmneziaDialSilentServer is the same check for the AmneziaWG variants,
 // whose key exchange used to hang forever on a silent control port (reported
 // as the blind test hanging on amnezia).

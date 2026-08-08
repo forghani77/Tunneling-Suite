@@ -136,7 +136,10 @@ func (anytlsProto) Dial(addr string, opts Options) (Tunnel, error) {
 	sum := sha256.Sum256([]byte(anytlsPassword(opts)))
 	ctx := context.Background()
 	cli := session.NewClient(ctx, func(ctx context.Context) (net.Conn, error) {
-		c, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true})
+		// Bound the connect + TLS handshake so a silent peer can't hang the
+		// dial (the library's own timeouts apply to the session, not to this
+		// raw dial).
+		c, err := tls.DialWithDialer(&net.Dialer{Timeout: connTimeout}, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
 		if err != nil {
 			return nil, err
 		}

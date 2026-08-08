@@ -203,6 +203,13 @@ func DecodeFrame(b []byte) (ftype byte, seq uint32, ts time.Time, err error) {
 // Shared tunnel implementations
 // ---------------------------------------------------------------------------
 
+// connTimeout bounds every client-side dial and handshake read/write so a
+// peer that accepts a connection but never speaks the protocol — e.g. an
+// unrelated service squatting on a port probed in blind mode — cannot hang
+// the suite forever. The benchmark's per-protocol budget only starts after
+// Dial returns, so the dial stage must bound itself.
+const connTimeout = 10 * time.Second
+
 // socketBufSize is the SO_RCVBUF/SO_SNDBUF requested for datagram sockets.
 // The kernel clamps the actual size to net.core.rmem_max/wmem_max, so on a
 // host with tiny defaults (often 208 KiB) a larger value only takes effect

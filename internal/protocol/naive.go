@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
@@ -197,6 +198,13 @@ func (f flushWriter) Write(p []byte) (int, error) {
 func (naiveProto) Dial(addr string, opts Options) (Tunnel, error) {
 	tr := &http2.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h2"}},
+		// DialTLSContext replaces the transport's default (unbounded) tls.Dial
+		// so the TCP connect and TLS handshake are bounded: a service
+		// squatting on the port that accepts TCP but never speaks TLS would
+		// otherwise hang the RoundTrip — and the whole blind probe — forever.
+		DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+			return tls.DialWithDialer(&net.Dialer{Timeout: connTimeout}, network, addr, cfg)
+		},
 	}
 	pr, pw := io.Pipe()
 	req := &http.Request{

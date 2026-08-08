@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 )
 
 // httpProto tunnels bytes through an HTTP CONNECT handshake (RFC 7231 §4.3.6)
@@ -29,15 +30,22 @@ func (httpProto) Listen(addr string, opts Options) (ProtoServer, error) {
 }
 
 func (httpProto) Dial(addr string, opts Options) (Tunnel, error) {
-	c, err := net.Dial("tcp", addr)
+	c, err := net.DialTimeout("tcp", addr, connTimeout)
 	if err != nil {
 		return nil, err
 	}
+	// Bound the CONNECT handshake read: a service squatting on the port that
+	// accepts TCP but never answers would otherwise hang the dial forever
+	// (the benchmark's per-protocol budget only starts after Dial returns).
+	// Cleared once the handshake is done — the benchmark owns the tunnel's
+	// deadlines from there on.
+	_ = c.SetDeadline(time.Now().Add(connTimeout))
 	wrapped, err := doConnectHandshake(c, addr)
 	if err != nil {
 		_ = c.Close()
-		return nil, err
+		return nil, fmt.Errorf("http handshake failed (is another service on this port?): %w", err)
 	}
+	_ = c.SetDeadline(time.Time{})
 	return newStreamTunnel(wrapped, "http://"+addr), nil
 }
 
@@ -64,16 +72,20 @@ func (httpsProto) Listen(addr string, opts Options) (ProtoServer, error) {
 
 func (httpsProto) Dial(addr string, opts Options) (Tunnel, error) {
 	// The harness owns both ends and uses an ephemeral self-signed cert, so
-	// the client deliberately skips certificate validation.
-	c, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true})
+	// the client deliberately skips certificate validation. DialWithDialer
+	// bounds the connect + TLS handshake; the deadline below bounds the
+	// CONNECT handshake read (see httpProto.Dial).
+	c, err := tls.DialWithDialer(&net.Dialer{Timeout: connTimeout}, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
 	}
+	_ = c.SetDeadline(time.Now().Add(connTimeout))
 	wrapped, err := doConnectHandshake(c, addr)
 	if err != nil {
 		_ = c.Close()
-		return nil, err
+		return nil, fmt.Errorf("https handshake failed (is another service on this port?): %w", err)
 	}
+	_ = c.SetDeadline(time.Time{})
 	return newStreamTunnel(wrapped, "https://"+addr), nil
 }
 
@@ -91,11 +103,17 @@ func (s *connectServer) Accept() (Tunnel, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Bound the handshake read: a peer that connects and never sends a
+		// request must not stall the accept loop for every other client.
+		// Cleared once the tunnel is handed over — the benchmark owns its
+		// deadlines from there on.
+		_ = c.SetDeadline(time.Now().Add(connTimeout))
 		wrapped, err := serveConnect(c)
 		if err != nil {
 			_ = c.Close()
 			continue
 		}
+		_ = c.SetDeadline(time.Time{})
 		return newStreamTunnel(wrapped, "connect://"+s.ln.Addr().String()), nil
 	}
 }
