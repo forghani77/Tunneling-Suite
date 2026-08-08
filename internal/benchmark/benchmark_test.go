@@ -2,8 +2,11 @@ package benchmark
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"tunnel-suite/internal/protocol"
 	"tunnel-suite/internal/report"
@@ -162,6 +165,64 @@ func TestSequentialClientsSameServer(t *testing.T) {
 			}
 			if res := Run(p, addr, opts, cfg); res.Status != report.StatusOK {
 				t.Fatalf("benchmark after blast: status=%s error=%q (zombie-session regression?)", res.Status, res.Error)
+			}
+		})
+	}
+}
+
+// TestBlindThroughputSkipsTCPControl pins the blind-mode throughput seam:
+// RunThroughput must forward Options.Blind to the protocol dial, so the
+// WireGuard family's speed test never touches its TCP control plane. The
+// control port is a silent listener — a non-blind dial would block in the
+// key exchange for the full timeout and fail with a "key exchange" error —
+// yet the blind dial must sail past it. Without root the dial fails at TUN
+// setup (a different, later error), which is the pass condition here; with
+// root it establishes and the blast simply gets no echo, which is also fine.
+func TestBlindThroughputSkipsTCPControl(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+		}
+	}()
+
+	cfg := DefaultConfig()
+	cfg.ThroughputSec = 0.2
+	cfg.ThroughputSize = 1400
+
+	for _, name := range []string{"wireguard", "amnezia", "amnezia2"} {
+		p, ok := protocol.ByName(name)
+		if !ok {
+			t.Fatalf("protocol %s not registered", name)
+		}
+		t.Run(name, func(t *testing.T) {
+			// The three protocols use disjoint internal subnets and separate
+			// interfaces, so simultaneous wg-family tunnels are safe.
+			t.Parallel()
+			start := time.Now()
+			res := RunThroughput(p, ln.Addr().String(), protocol.Options{Blind: true}, cfg)
+			// Any error mentioning the TCP control plane (key exchange,
+			// refused connect, connect timeout) means Blind was dropped and
+			// the speed test wrongly dialed TCP.
+			for _, marker := range []string{"key exchange", "connection refused", "i/o timeout"} {
+				if strings.Contains(res.Error, marker) {
+					t.Fatalf("blind throughput touched the TCP control plane: %v", res.Error)
+				}
+			}
+			if d := time.Since(start); d > 15*time.Second {
+				t.Fatalf("blind throughput hung for %v against a silent control port", d)
 			}
 		})
 	}

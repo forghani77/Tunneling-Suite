@@ -385,12 +385,15 @@ port (`base+0`, TCP). `--blind` skips that, probes every protocol at its
 standard base-port offset, and — for `wireguard`/`amnezia`/`amnezia2` — also
 skips the TCP key-exchange handshake: both ends use **embedded known keys**
 and a **fixed inner echo port**, so those tunnels establish over UDP alone.
-This is meant for servers behind a firewall that filters TCP on the control
-port (and often on the protocol control ports too). Protocols whose dial or
-handshake cannot complete show as `skipped` with the reason, and every dial
-is internally time-bounded so the run always finishes. Note the known keys
-are public constants compiled into the binary — the harness is a benchmark
-tool, not a secure VPN.
+The `--throughput` speed test dials through the same path, so in blind mode
+the WireGuard family's speed test also runs over UDP alone — zero TCP (the
+client plumbing routes `--blind` to both the standard benchmark and the
+speed test). This is meant for servers behind a firewall that filters TCP on
+the control port (and often on the protocol control ports too). Protocols
+whose dial or handshake cannot complete show as `skipped` with the reason,
+and every dial is internally time-bounded so the run always finishes. Note
+the known keys are public constants compiled into the binary — the harness
+is a benchmark tool, not a secure VPN.
 
 ### Port layout
 
@@ -492,7 +495,8 @@ sudo tunnel-suite client --server <server-ip> --base-port 10000 \
 >
 > `wireguard`/`amnezia`/`amnezia2` need root, `iproute2` (`ip`),
 > `wireguard-tools` (`wg`), and `/dev/net/tun` — otherwise they are reported
-> **skipped**.
+> **skipped**. With `--blind` their speed test also runs over UDP alone, like
+> the benchmark (see *Blind mode* above).
 >
 > **Raw protocols and the MTU:** over a real network, raw layer-3 protocols
 > (`icmp`, `icmpv6`, `gre`, `ipip`, `sit`, `6to4`) send each frame as a

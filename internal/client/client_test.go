@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"tunnel-suite/internal/benchmark"
 	"tunnel-suite/internal/protocol"
+	"tunnel-suite/internal/report"
 )
 
 func TestBlindEntriesCoversAllProtocols(t *testing.T) {
@@ -65,5 +67,85 @@ func TestFetchManifestSilentControlPort(t *testing.T) {
 	}
 	if d := time.Since(start); d > 10*time.Second {
 		t.Fatalf("fetchManifest hung for %v against a silent control server", d)
+	}
+}
+
+// TestBlindThroughputRunSkipsControlPort pins the blind-mode throughput
+// plumbing end to end: client.Run with Blind must never touch the TCP control
+// port, even for the --throughput speed test. base+0 is a silent TCP
+// squatter (accepts and never answers — a non-blind run would hang on the
+// manifest fetch and fail), the only listener is a real UDP echo server at
+// the protocol's port offset, and yet the throughput-only run must succeed
+// quickly. This guards the client plumbing that routes cfg.Blind into both
+// the benchmark and the speed test.
+func TestBlindThroughputRunSkipsControlPort(t *testing.T) {
+	ctl, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ctl.Close()
+	base := ctl.Addr().(*net.TCPAddr).Port
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		c, err := ctl.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+		}
+	}()
+
+	udp, ok := protocol.ByName("udp")
+	if !ok {
+		t.Fatal("udp protocol not registered")
+	}
+	echoAddr := protocol.JoinHostPort("127.0.0.1", base+protocol.PortOffset(udp))
+	srv, err := udp.Listen(echoAddr, protocol.Options{})
+	if err != nil {
+		t.Skipf("udp echo on %s (rare port collision): %v", echoAddr, err)
+	}
+	defer srv.Close()
+	go func() {
+		for {
+			tun, err := srv.Accept()
+			if err != nil {
+				return
+			}
+			go protocol.EchoLoop(tun)
+		}
+	}()
+
+	cfg := benchmark.DefaultConfig()
+	cfg.ThroughputSec = 0.5
+	cfg.ThroughputSize = 1400
+
+	start := time.Now()
+	rep, err := Run(Config{
+		Server:         "127.0.0.1",
+		BasePort:       base,
+		Blind:          true,
+		Throughput:     []string{"udp"},
+		ThroughputOnly: true,
+		Config:         cfg,
+	})
+	if err != nil {
+		t.Fatalf("blind throughput run failed (did it dial the control port?): %v", err)
+	}
+	if d := time.Since(start); d > 15*time.Second {
+		t.Fatalf("blind throughput run took %v, want < 15s", d)
+	}
+	if len(rep.Throughput) != 1 {
+		t.Fatalf("throughput results = %d, want 1", len(rep.Throughput))
+	}
+	r := rep.Throughput[0]
+	if r.Protocol != "udp" || r.Status != report.StatusOK {
+		t.Fatalf("throughput = %s/%s, want udp/ok (error=%q)", r.Protocol, r.Status, r.Error)
+	}
+	if r.UploadMbps <= 0 || r.DownloadMbps <= 0 {
+		t.Fatalf("no throughput: up=%.1f down=%.1f", r.UploadMbps, r.DownloadMbps)
 	}
 }
