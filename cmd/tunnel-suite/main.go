@@ -549,6 +549,7 @@ fully blocked.`,
 				return client.RunForward(client.ForwardConfig{
 					Server:            serverHost,
 					ProtocolsBasePort: protocolsBasePort,
+					ControlPort:       controlPort,
 					Protocol:          fwdProtocol,
 					Password:          password,
 					SSPassword:        ssPass,
@@ -666,7 +667,7 @@ fully blocked.`,
 	f := cmd.Flags()
 	f.StringVar(&serverHost, "server", "", "server host or IP (required)")
 	f.IntVar(&protocolsBasePort, "protocols-base-port", 10000, "protocols base port (must match server)")
-	f.IntVar(&controlPort, "control-port", 0, "control/manifest port (default: the protocols base port; must match server when set)")
+	f.IntVar(&controlPort, "control-port", 0, "control/manifest port (default: the protocols base port; in forwarding mode the tunnel port is discovered from the manifest instead of protocols-base-port + offset)")
 	f.StringVar(&protocols, "protocols", "", "comma-separated subset (default: everything the server offers)")
 	f.IntVar(&pings, "pings", 50, "probes per phase per protocol")
 	f.IntVar(&rttSize, "rtt-size", protocol.DefaultRTTSize, "latency probe size (bytes)")

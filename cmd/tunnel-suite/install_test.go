@@ -100,6 +100,7 @@ func TestClientExecArgs(t *testing.T) {
 		name                 string
 		server               string
 		protocolsBasePort    int
+		controlPort          int
 		protocol, mode, bind string
 		localPort            int
 		remoteHost           string
@@ -141,10 +142,23 @@ func TestClientExecArgs(t *testing.T) {
 			ss:                "ss",
 			want:              `/opt/bin/tunnel-suite client --server "my host" --protocols-base-port 10000 --tunnel-protocol ws --mode socks --bind 127.0.0.1 --local-port 1080 --password "p w" --ss-password ss`,
 		},
+		{
+			name:              "control port discovers tunnel port",
+			server:            "HOST",
+			protocolsBasePort: 11580,
+			controlPort:       11606,
+			protocol:          "smtp",
+			mode:              "forward",
+			bind:              "0.0.0.0",
+			localPort:         2060,
+			remoteHost:        "127.0.0.1",
+			remotePort:        11612,
+			want:              "/opt/bin/tunnel-suite client --server HOST --protocols-base-port 11580 --control-port 11606 --tunnel-protocol smtp --mode forward --bind 0.0.0.0 --local-port 2060 --remote-host 127.0.0.1 --remote-port 11612",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := strings.Join(clientExecArgs("/opt/bin/tunnel-suite", c.server, c.protocolsBasePort, c.protocol, c.mode, c.bind, c.localPort, c.remoteHost, c.remotePort, c.password, c.ss), " ")
+			got := strings.Join(clientExecArgs("/opt/bin/tunnel-suite", c.server, c.protocolsBasePort, c.controlPort, c.protocol, c.mode, c.bind, c.localPort, c.remoteHost, c.remotePort, c.password, c.ss), " ")
 			if got != c.want {
 				t.Errorf("got  %q\nwant %q", got, c.want)
 			}

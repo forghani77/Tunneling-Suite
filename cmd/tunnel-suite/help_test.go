@@ -49,7 +49,7 @@ func TestHelpRendersSingleDash(t *testing.T) {
 		"client":         {"-server", "-blind", "-protocols-base-port", "-control-port", "-tunnel-protocol", "-local-port"},
 		"server":         {"-listen", "-protocols-base-port", "-control-port", "-forward"},
 		"install":        nil,
-		"install client": {"-server", "-tunnel-protocol", "-mode", "-local-port", "-uninstall"},
+		"install client": {"-server", "-tunnel-protocol", "-mode", "-control-port", "-local-port", "-uninstall"},
 		"uninstall":      {"-user", "-dry-run", "-yes"},
 	}
 	for path, flags := range perCommandFlags {

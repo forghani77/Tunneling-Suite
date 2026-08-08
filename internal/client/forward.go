@@ -20,17 +20,22 @@ type ForwardConfig struct {
 	Server string
 	// ProtocolsBasePort is the base for the tunnel dial: the chosen protocol
 	// is dialed at ProtocolsBasePort plus its registry offset (must match the
-	// server's --protocols-base-port). Forwarding never uses the control
-	// port.
+	// server's --protocols-base-port). Ignored when ControlPort is set, since
+	// the manifest then reports the exact port the server actually serves.
 	ProtocolsBasePort int
-	Protocol          string // tunnel protocol name (e.g. "tcp", "udp", "ws", ...)
-	Password          string
-	SSPassword        string
-	Mode              string // "forward" (fixed target) or "socks" (SOCKS5 proxy)
-	Bind              string // local bind address, default "127.0.0.1"
-	LocalPort         int
-	RemoteHost        string // forward mode only
-	RemotePort        int    // forward mode only
+	// ControlPort is the server's control/manifest port. When set, the tunnel
+	// port is discovered from the manifest instead of computed as
+	// ProtocolsBasePort + offset, so the client aligns itself with whatever
+	// the server actually reports. Zero keeps the offset-based dial.
+	ControlPort int
+	Protocol    string // tunnel protocol name (e.g. "tcp", "udp", "ws", ...)
+	Password    string
+	SSPassword  string
+	Mode        string // "forward" (fixed target) or "socks" (SOCKS5 proxy)
+	Bind        string // local bind address, default "127.0.0.1"
+	LocalPort   int
+	RemoteHost  string // forward mode only
+	RemotePort  int    // forward mode only
 }
 
 // RunForward runs the forwarding endpoint until killed. It listens on the
@@ -55,7 +60,11 @@ func RunForward(cfg ForwardConfig) error {
 	if !ok {
 		return fmt.Errorf("unknown protocol %q (known: %v)", cfg.Protocol, protocol.Names())
 	}
-	addr := net.JoinHostPort(cfg.Server, strconv.Itoa(cfg.ProtocolsBasePort+protocol.PortOffset(p)))
+	port, err := forwardDialPort(cfg, p)
+	if err != nil {
+		return err
+	}
+	addr := net.JoinHostPort(cfg.Server, strconv.Itoa(port))
 	opts := protocol.Options{
 		Password:   cfg.Password,
 		SSPassword: cfg.SSPassword,
@@ -65,8 +74,12 @@ func RunForward(cfg ForwardConfig) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", net.JoinHostPort(cfg.Bind, strconv.Itoa(cfg.LocalPort)), err)
 	}
-	fmt.Printf("tunnel-suite %s → %s via %s on %s (protocols base port %d)\n",
-		cfg.Mode, cfg.Server, p.Name(), ln.Addr(), cfg.ProtocolsBasePort)
+	portSrc := "protocols-base-port + offset"
+	if cfg.ControlPort != 0 {
+		portSrc = "manifest"
+	}
+	fmt.Printf("tunnel-suite %s → %s via %s on %s (tunnel port %d, %s)\n",
+		cfg.Mode, cfg.Server, p.Name(), ln.Addr(), port, portSrc)
 	if cfg.Mode == "forward" {
 		fmt.Printf("forwarding to %s\n", net.JoinHostPort(cfg.RemoteHost, strconv.Itoa(cfg.RemotePort)))
 	} else {
@@ -79,6 +92,33 @@ func RunForward(cfg ForwardConfig) error {
 		}
 		go handleForwardConn(c, p, addr, opts, cfg)
 	}
+}
+
+// forwardDialPort returns the absolute port to dial for the tunnel protocol.
+// With ControlPort set, the port comes from the server's manifest (the client
+// aligns itself with what the server actually serves, and fails with a clear
+// error if the protocol is missing or unavailable there); otherwise it is
+// ProtocolsBasePort plus the protocol's registry offset.
+func forwardDialPort(cfg ForwardConfig, p protocol.Protocol) (int, error) {
+	if cfg.ControlPort == 0 {
+		return cfg.ProtocolsBasePort + protocol.PortOffset(p), nil
+	}
+	entries, _, err := fetchManifest(Config{
+		Server:            cfg.Server,
+		ProtocolsBasePort: cfg.ProtocolsBasePort,
+		ControlPort:       cfg.ControlPort,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("discover tunnel port from control port: %w", err)
+	}
+	e, ok := entries[p.Name()]
+	if !ok {
+		return 0, fmt.Errorf("server does not offer protocol %q (control port %d)", p.Name(), cfg.ControlPort)
+	}
+	if !e.Available {
+		return 0, fmt.Errorf("protocol %q is unavailable on the server: %s", p.Name(), e.Reason)
+	}
+	return e.Port, nil
 }
 
 // handleForwardConn serves one local TCP connection: for SOCKS mode it first

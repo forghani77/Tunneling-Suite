@@ -481,16 +481,21 @@ func serverExecArgs(exe, listen string, protocolsBasePort, controlPort int, forw
 }
 
 // clientExecArgs builds the ExecStart argv for a forwarding client from its
-// flags. Used by `install client`. Forwarding dials the tunnel protocol
-// directly and never uses the control port.
-func clientExecArgs(exe, server string, protocolsBasePort int, protocol, mode, bind string, localPort int, remoteHost string, remotePort int, password, ssPass string) []string {
+// flags. Used by `install client`. The control port is only written when set:
+// it makes the client discover the tunnel port from the server's manifest
+// instead of computing protocols-base-port + offset.
+func clientExecArgs(exe, server string, protocolsBasePort, controlPort int, protocol, mode, bind string, localPort int, remoteHost string, remotePort int, password, ssPass string) []string {
 	args := []string{quoteArg(exe), "client",
 		"--server", quoteArg(server),
-		"--protocols-base-port", fmt.Sprintf("%d", protocolsBasePort),
+		"--protocols-base-port", fmt.Sprintf("%d", protocolsBasePort)}
+	if controlPort != 0 {
+		args = append(args, "--control-port", fmt.Sprintf("%d", controlPort))
+	}
+	args = append(args,
 		"--tunnel-protocol", protocol,
 		"--mode", mode,
 		"--bind", quoteArg(bind),
-		"--local-port", fmt.Sprintf("%d", localPort)}
+		"--local-port", fmt.Sprintf("%d", localPort))
 	if mode == "forward" {
 		args = append(args, "--remote-host", quoteArg(remoteHost), "--remote-port", fmt.Sprintf("%d", remotePort))
 	}
@@ -600,6 +605,7 @@ func installClientCmd() *cobra.Command {
 		o                 installOpts
 		server            string
 		protocolsBasePort int
+		controlPort       int
 		protocol          string
 		mode              string
 		bind              string
@@ -621,12 +627,19 @@ connections through the chosen tunnel protocol to a server running with
   --mode forward  forward --local-port to a fixed --remote-host:--remote-port
   --mode socks    run a local SOCKS5 proxy on --local-port
 
+Add --control-port to discover the tunnel port from the server's manifest
+instead of computing --protocols-base-port + offset — handy when the server's
+layout was configured differently (e.g. its own --control-port).
+
 --uninstall only needs the unit name; the endpoint flags are not required to
 remove the service again.`,
 		Example: `  sudo tunnel-suite install client --server 203.0.113.10 --tunnel-protocol tcp \
     --mode forward --local-port 8080 --remote-host 10.0.0.5 --remote-port 80
   tunnel-suite install client --server HOST --tunnel-protocol udp --mode socks \
-    --local-port 1080 --user`,
+    --local-port 1080 --user
+  sudo tunnel-suite install client --server HOST --tunnel-protocol smtp \
+    --protocols-base-port 11580 --control-port 11606 --mode forward \
+    --local-port 2060 --remote-host 127.0.0.1 --remote-port 11612`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.overall = "client"
 			if !unitNameRe.MatchString(o.name) {
@@ -642,7 +655,7 @@ remove the service again.`,
 			if err != nil || exe == "" {
 				return fmt.Errorf("cannot determine the binary path (os.Executable)")
 			}
-			argsStr := clientExecArgs(exe, server, protocolsBasePort, protocol, mode, bind, localPort, remoteHost, remotePort, password, ssPass)
+			argsStr := clientExecArgs(exe, server, protocolsBasePort, controlPort, protocol, mode, bind, localPort, remoteHost, remotePort, password, ssPass)
 			desc := fmt.Sprintf("tunnel-suite %s client (%s tunnel)", mode, protocol)
 			if o.uninstall {
 				// --uninstall ignores the unit content; render a clean one for
@@ -661,6 +674,7 @@ remove the service again.`,
 	f.StringVar(&o.name, "name", "tunnel-suite-client", "systemd unit name")
 	f.StringVar(&server, "server", "", "server host or IP (required)")
 	f.IntVar(&protocolsBasePort, "protocols-base-port", 10000, "protocols base port (must match server)")
+	f.IntVar(&controlPort, "control-port", 0, "server control/manifest port; when set, the tunnel port is discovered from the manifest instead of protocols-base-port + offset")
 	f.StringVar(&protocol, "tunnel-protocol", "", "tunnel protocol, e.g. tcp, udp, ws (required)")
 	f.StringVar(&mode, "mode", "", "forward or socks (required)")
 	f.StringVar(&bind, "bind", "127.0.0.1", "local bind address")

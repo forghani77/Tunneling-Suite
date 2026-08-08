@@ -2,6 +2,7 @@ package client
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,90 @@ func TestFetchManifestUsesControlPort(t *testing.T) {
 	}
 	if _, ok := entries["udp"]; !ok {
 		t.Errorf("manifest entries missing udp: %v", entries)
+	}
+}
+
+// TestForwardDialPort verifies the forwarding client's tunnel-port choice:
+// with ControlPort unset it computes protocols-base-port + offset; with it
+// set it takes the exact port the server's manifest reports (and errors when
+// the protocol is not offered there).
+func TestForwardDialPort(t *testing.T) {
+	udp, ok := protocol.ByName("udp")
+	if !ok {
+		t.Fatal("udp protocol not registered")
+	}
+
+	// No control port: offset-based, never touches the network.
+	port, err := forwardDialPort(ForwardConfig{ProtocolsBasePort: 11580}, udp)
+	if err != nil {
+		t.Fatalf("offset dial: %v", err)
+	}
+	if port != 11580+protocol.PortOffset(udp) {
+		t.Errorf("offset dial port = %d, want %d", port, 11580+protocol.PortOffset(udp))
+	}
+
+	// With a control port: the reported manifest port wins over base+offset.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	ctlPort := ln.Addr().(*net.TCPAddr).Port
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		buf := make([]byte, 64)
+		if _, err := c.Read(buf); err != nil {
+			return
+		}
+		// Server reports udp on a port that differs from base+offset.
+		_, _ = c.Write([]byte(`{"entries":[{"name":"udp","port":12345,"kind":"datagram","needs_root":false,"available":true}]}`))
+	}()
+	port, err = forwardDialPort(ForwardConfig{
+		Server:            "127.0.0.1",
+		ProtocolsBasePort: 11580,
+		ControlPort:       ctlPort,
+	}, udp)
+	if err != nil {
+		t.Fatalf("manifest dial: %v", err)
+	}
+	if port != 12345 {
+		t.Errorf("manifest dial port = %d, want 12345 (the reported port)", port)
+	}
+
+	// Protocol not offered by the server: clear error, not a bogus dial.
+	tcp, ok := protocol.ByName("tcp")
+	if !ok {
+		t.Fatal("tcp protocol not registered")
+	}
+	ln2, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln2.Close()
+	go func() {
+		c, err := ln2.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		buf := make([]byte, 64)
+		if _, err := c.Read(buf); err != nil {
+			return
+		}
+		_, _ = c.Write([]byte(`{"entries":[]}`))
+	}()
+	_, err = forwardDialPort(ForwardConfig{
+		Server:      "127.0.0.1",
+		ControlPort: ln2.Addr().(*net.TCPAddr).Port,
+	}, tcp)
+	if err == nil || !strings.Contains(err.Error(), "does not offer protocol \"tcp\"") {
+		t.Errorf("unoffered-protocol error = %v, want a 'does not offer' error", err)
 	}
 }
 

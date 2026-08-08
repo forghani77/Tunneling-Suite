@@ -320,6 +320,18 @@ tunnel-suite client --server HOST --tunnel-protocol udp --mode socks --local-por
 socks` runs a local SOCKS5 proxy whose destinations are chosen by the client
 application (e.g. `curl --socks5-hostname 127.0.0.1:1080 ...`).
 
+By default the tunnel is dialed at `--protocols-base-port` plus the chosen
+protocol's offset. Add `--control-port` to instead discover the exact tunnel
+port from the server's manifest — the client then dials whatever port the
+server actually reports for the protocol, which is handy when the server was
+configured with its own `--control-port` and a shifted base:
+
+```sh
+tunnel-suite client --server HOST --tunnel-protocol smtp --mode forward \
+  --protocols-base-port 11580 --control-port 11606 \
+  --local-port 2060 --remote-host 127.0.0.1 --remote-port 11612
+```
+
 ### Installing as a systemd service
 
 Use the `install` subcommand to write a systemd unit and start it with
@@ -337,9 +349,11 @@ tunnel-suite install client --uninstall                  # just the unit name
 `install server` writes a unit that runs the server with relay enabled by
 default. For the client, the tunnel protocol (`--tunnel-protocol`, any
 supported protocol), the mode (`--mode forward|socks`) and the local port
-(`--local-port`) are required. `--name` sets a custom systemd unit name;
-`--uninstall` only needs that name, so the endpoint flags are not required to
-remove the service again.
+(`--local-port`) are required. Add `--control-port` to make the installed
+client discover the tunnel port from the server's manifest instead of
+computing `--protocols-base-port` + offset. `--name` sets a custom systemd
+unit name; `--uninstall` only needs that name, so the endpoint flags are not
+required to remove the service again.
 
 To remove services again, use the `uninstall` subcommand. It scans the unit
 directory for the services tunnel-suite installed and **confirms before
