@@ -459,7 +459,7 @@ service, use the install server subcommand.`,
 	f.StringVar(&cert, "cert", "", "TLS certificate file (default: ephemeral self-signed)")
 	f.StringVar(&key, "key", "", "TLS key file")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password (must match client)")
-	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp (must match client)")
+	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp/noise/trojan/shadowtls (must match client)")
 	f.BoolVar(&forward, "forward", true, "enable relay sessions for 'tunnel-suite client --mode forward|socks' (on by default; -forward=false disables)")
 	_ = cmd.RegisterFlagCompletionFunc("protocols", completeProtocol)
 	return cmd
@@ -677,7 +677,7 @@ fully blocked.`,
 	f.StringVar(&jsonOut, "json", "", "JSON report path (default: report-<timestamp>.json)")
 	f.BoolVar(&noColor, "no-color", false, "disable ANSI colors")
 	f.StringVar(&ssPass, "ss-password", "", "Shadowsocks password (must match server)")
-	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp (must match server)")
+	f.StringVar(&password, "password", "", "shared secret for anytls/naive/ipsec/l2tp/noise/trojan/shadowtls (must match server)")
 	f.BoolVar(&blind, "blind", false, "probe every protocol directly, skipping the server's TCP control port and the wireguard/amnezia/amnezia2 TCP key exchange (for servers behind a firewall that filters TCP)")
 	f.StringVar(&throughput, "throughput", "", "comma-separated protocols to run a throughput speed test against (default: none)")
 	f.Var(throughputOnly, "throughput-only", "run only the throughput speed tests against the given protocols (skip the standard benchmark); accepts a list (--throughput-only=tcp,udp or --throughput-only tcp,udp) or bare to reuse the --throughput list")

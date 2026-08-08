@@ -44,6 +44,8 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `naive`      | stream    | NaiveProxy — TLS + HTTP/2 CONNECT + padding (pure Go)    | no            |
 | `smtp`       | stream      | SMTP tunnel — fake Postfix handshake then raw stream     | no            |
 | `noise`      | stream      | Noise NNpsk0 record layer over TCP, keyed from `--password` | no          |
+| `shadowtls`  | stream      | ShadowTLS v3 — TLS records tagged with a token-derived HMAC | no          |
+| `trojan`     | stream      | Trojan — TLS + SHA-224(password) header, wire-compatible    | no          |
 
 Notes:
 
@@ -180,6 +182,27 @@ Notes:
   Costs a little more CPU than plain TCP for the encryption. Because the
   whole tunnel runs over plain TCP with no separate key-exchange plane, it
   works unchanged in `--blind` mode.
+- `trojan` is **wire-compatible with the real Trojan protocol**: a real TLS
+  handshake (ephemeral self-signed cert) followed by the classic header —
+  the hex-encoded SHA-224 of `--password`, CRLF, command byte `0x01`
+  (TCP connect), a SOCKS5-style address, and a trailing CRLF — after which
+  the connection becomes a raw byte stream. On the wire it is
+  indistinguishable from ordinary HTTPS, and a peer without the password
+  fails the hash check, so the server closes without a reply and the port
+  looks dead. The harness client sends a fixed `0.0.0.0:0` target (the
+  forwarding plane supplies real destinations), which real Trojan servers
+  accept.
+- `shadowtls` implements the **ShadowTLS v3 wire format**
+  (`sing-shadowtls`/`ihciah shadow-tls`): a real TLS handshake followed by
+  TLS application-data records whose payloads carry a 4-byte HMAC-SHA1 tag
+  and are XORed with a password-derived keystream. The v3 key-derivation
+  seed (normally the decoy ServerHello random) is a 32-byte
+  password-derived greeting the server sends before the TLS handshake, so
+  both ends agree on the keys without a decoy site. Every post-handshake
+  record is authenticated: a peer without the token fails the HMAC on the
+  very first record and the server closes silently, so the port looks dead
+  to scanners. Both `trojan` and `shadowtls` run over plain TCP with no
+  separate key-exchange plane, so they work unchanged in `--blind` mode.
 - If a protocol can't start (no privileges, no module), the server reports it
   unavailable and the client marks it **skipped** with the reason.
 - `bip`, `h3`, `ss`, `wg`, `awg`/`amneziawg`, `awg2`, `l2tap`/`l2`,
@@ -190,7 +213,8 @@ Notes:
   `amnesia`/`amnesia2`/`amensia`/`amensia2` are accepted as aliases
   (`awg` → `amnezia`, `awg2` → `amnezia2`, `bip` → `sit`, `icmp6` →
   `icmpv6`, `icmp4`/`ping` → `icmp`, `six-to-four` → `6to4`, `l2tap` →
-  `tap`, `naiveproxy` → `naive`, `nnpsk0` → `noise`, ...).
+  `tap`, `naiveproxy` → `naive`, `nnpsk0` → `noise`, `shadow-tls` →
+  `shadowtls`, `trojangfw` → `trojan`, ...).
 
 ## Quick start
 
@@ -240,7 +264,8 @@ tunnel-suite server [flags]
   --protocols string         comma-separated subset (default: all)
   --cert, --key        TLS certificate pair (default: ephemeral self-signed)
   --ss-password string Shadowsocks password (must match the client)
-  --password string    shared secret for anytls/naive/noise (must match the client)
+  --password string    shared secret for anytls/naive/ipsec/l2tp/noise/trojan/
+                       shadowtls (must match the client)
   --forward            enable relay sessions for client --mode forward|socks
 ```
 
@@ -260,7 +285,8 @@ tunnel-suite client [flags]
   --timeout float      per-protocol budget in seconds (default 20)
   --json string        JSON report path (default report-<timestamp>.json)
   --ss-password string Shadowsocks password (must match the server)
-  --password string    shared secret for anytls/naive/noise (must match the server)
+  --password string    shared secret for anytls/naive/ipsec/l2tp/noise/trojan/
+                       shadowtls (must match the server)
   --throughput string  comma-separated protocols to run a throughput speed
                        test against (default: none)
   --throughput-only [list]
@@ -472,6 +498,8 @@ JSON report records both (`protocols_base_port`, `control_port`).
 | +32       | ipsec (UDP, ESP NAT-T)                  |
 | +33       | l2tp (UDP, L2TPv3 data messages)         |
 | +34       | noise (TCP)                              |
+| +35       | shadowtls (TCP)                          |
+| +36       | trojan (TCP)                             |
 
 ## How a test works
 
@@ -593,7 +621,8 @@ internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         h3, kcp, shadowsocks, gre, ipip, sit, 6to4, geneve,
                         vxlan, vxlan-gpe, gue, ipsec, l2tp, icmp, icmpv6,
                         wireguard, amnezia, amnezia2, tap,
-                        http, https, ws, wss, anytls, naive, smtp, noise)
+                        http, https, ws, wss, anytls, naive, smtp, noise,
+                        shadowtls, trojan)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)
 internal/report/        result model, terminal table, JSON serialization
 internal/server/        server orchestration: listeners, echo loops, manifest

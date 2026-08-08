@@ -43,6 +43,8 @@ const (
 	PortIPsec                  // +32: IPsec ESP over UDP (NAT-T)
 	PortL2TP                   // +33: L2TPv3 (UDP)
 	PortNoise                  // +34: Noise NNpsk0 (TCP)
+	PortShadowTLS              // +35: ShadowTLS (TCP)
+	PortTrojan                 // +36: Trojan (TCP)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -79,6 +81,8 @@ func All() []Protocol {
 		ipsecProto{},
 		l2tpProto{},
 		noiseProto{},
+		shadowTLSProto{},
+		trojanProto{},
 	}
 }
 
@@ -158,6 +162,10 @@ func PortOffset(p Protocol) int {
 		return PortL2TP
 	case "noise":
 		return PortNoise
+	case "shadowtls":
+		return PortShadowTLS
+	case "trojan":
+		return PortTrojan
 	}
 	return -1
 }
@@ -228,6 +236,9 @@ var NameAliases = map[string]string{
 	"nnpsk0":      "noise",
 	"nn-psk0":     "noise",
 	"noisepsk":    "noise",
+	"shadow-tls":  "shadowtls",
+	"shad0wtls":   "shadowtls",
+	"trojangfw":   "trojan",
 }
 
 // NormalizeName canonicalizes a user-supplied protocol name.
