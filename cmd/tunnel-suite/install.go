@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -61,25 +65,226 @@ func systemdPrefix(o installOpts) []string {
 	return nil
 }
 
+// unitDir returns the systemd unit directory for the chosen scope.
+func unitDir(o installOpts) (string, error) {
+	if !o.user {
+		return "/etc/systemd/system", nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", fmt.Errorf("cannot find your home directory (is $HOME set?)")
+	}
+	return filepath.Join(home, ".config", "systemd", "user"), nil
+}
+
 // unitPath returns the unit file path for the chosen scope.
 func unitPath(o installOpts) (string, error) {
-	dir := "/etc/systemd/system"
-	if o.user {
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			return "", fmt.Errorf("cannot find your home directory (is $HOME set?)")
-		}
-		dir = filepath.Join(home, ".config", "systemd", "user")
+	dir, err := unitDir(o)
+	if err != nil {
+		return "", err
 	}
-	if !o.dryRun {
-		if _, err := exec.LookPath("systemctl"); err != nil {
-			return "", fmt.Errorf("systemctl not found on PATH — is this a systemd host? (use --dry-run to just print the unit)")
-		}
-		if !o.user && os.Geteuid() != 0 {
-			return "", fmt.Errorf("installing a system service needs root — rerun with sudo, or pass --user for a per-user service")
-		}
+	if err := requireSystemdEnv(o, "just print the unit"); err != nil {
+		return "", err
 	}
 	return filepath.Join(dir, o.name+".service"), nil
+}
+
+// requireSystemdEnv verifies the host can manage systemd units in the chosen
+// scope: systemctl must exist, and system services need root. dry-run mode
+// never touches the system, so both checks are skipped there. dryRunHint
+// explains what --dry-run offers instead ("just print the unit").
+func requireSystemdEnv(o installOpts, dryRunHint string) error {
+	if o.dryRun {
+		return nil
+	}
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return fmt.Errorf("systemctl not found on PATH — is this a systemd host? (use --dry-run to %s)", dryRunHint)
+	}
+	if !o.user && os.Geteuid() != 0 {
+		return fmt.Errorf("this needs root for system services — rerun with sudo, or pass --user for per-user services")
+	}
+	return nil
+}
+
+// uninstallCmd builds the `tunnel-suite uninstall` subcommand, which removes
+// tunnel-suite systemd services. With no arguments it removes every one it
+// can find; with service names it removes exactly those. Discovery is by
+// content: every unit written by `install` is self-identifying (its
+// Description and ExecStart reference tunnel-suite), so a scan of the unit
+// directory finds them all — default names, custom --name units, even a
+// renamed binary. Units belonging to other software are never touched.
+func uninstallCmd() *cobra.Command {
+	var (
+		user   bool
+		dryRun bool
+	)
+	cmd := &cobra.Command{
+		Use:   "uninstall [name...]",
+		Short: "Remove tunnel-suite systemd services",
+		Long: `Remove tunnel-suite systemd services.
+
+Scans the systemd unit directory (or, with --user, your per-user unit
+directory) for unit files that reference tunnel-suite. With no service names
+it removes them all: default names, custom --name units and renamed binaries
+alike. With names it removes only those — each must be an installed
+tunnel-suite service (tab-complete to pick from the installed ones); the
+.service suffix is optional. Other services are never touched. Add --dry-run
+to list what would be removed without changing anything.`,
+		Example: `  sudo tunnel-suite uninstall
+  sudo tunnel-suite uninstall tunnel-suite-server my-custom-tunnel
+  tunnel-suite uninstall --user
+  sudo tunnel-suite uninstall --dry-run`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return uninstallAll(installOpts{user: user, dryRun: dryRun}, args)
+		},
+		// Tab-complete the names of the installed tunnel-suite services in
+		// the requested scope, so `uninstall tunnel-s<TAB>` offers the units
+		// this machine actually has.
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			dir, err := unitDir(installOpts{user: user})
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			installed, err := findTunnelSuiteUnits(dir)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return completeInstalledUnits(installed, toComplete), cobra.ShellCompDirectiveNoFileComp
+		},
+	}
+	f := cmd.Flags()
+	f.BoolVar(&user, "user", false, "remove per-user tunnel-suite services (no root)")
+	f.BoolVar(&dryRun, "dry-run", false, "list what would be removed without changing anything")
+	return cmd
+}
+
+// completeInstalledUnits filters the installed unit names by the token being
+// completed, in a stable order.
+func completeInstalledUnits(installed []string, toComplete string) []string {
+	var out []string
+	for _, n := range installed {
+		if strings.HasPrefix(n, toComplete) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// findTunnelSuiteUnits lists the unit names (without the .service suffix) in
+// dir whose content references tunnel-suite — the marker every installed unit
+// carries in its Description and ExecStart — sorted for stable output.
+func findTunnelSuiteUnits(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".service") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			// Unreadable unit files — dangling symlinks and symlinked
+			// directories are common in /etc/systemd/system — are not ours;
+			// skip rather than abort the whole scan.
+			continue
+		}
+		if bytes.Contains(b, []byte("tunnel-suite")) {
+			names = append(names, strings.TrimSuffix(e.Name(), ".service"))
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// uninstallAll resolves the unit directory for the chosen scope, applies the
+// same environment checks as installing (systemctl present, root for system
+// services) and delegates to uninstallAllIn.
+func uninstallAll(o installOpts, names []string) error {
+	dir, err := unitDir(o)
+	if err != nil {
+		return err
+	}
+	if err := requireSystemdEnv(o, "just list the units"); err != nil {
+		return err
+	}
+	return uninstallAllIn(o, dir, names)
+}
+
+// uninstallAllIn removes tunnel-suite units in dir. With names, only those
+// units are removed and each must be installed (the .service suffix is
+// tolerated); with no names, every tunnel-suite unit found is removed.
+func uninstallAllIn(o installOpts, dir string, names []string) error {
+	installed, err := findTunnelSuiteUnits(dir)
+	if err != nil {
+		return err
+	}
+	if len(names) > 0 {
+		var want []string
+		for _, n := range names {
+			n = strings.TrimSuffix(n, ".service")
+			if !slices.Contains(installed, n) {
+				return fmt.Errorf("no tunnel-suite service %q installed in %s%s", n, dir, installedHint(installed))
+			}
+			if !slices.Contains(want, n) {
+				want = append(want, n)
+			}
+		}
+		installed = want
+	}
+	if len(installed) == 0 {
+		fmt.Printf("no tunnel-suite systemd services installed in %s\n", dir)
+		return nil
+	}
+	action := "uninstall"
+	if o.dryRun {
+		action = "would uninstall"
+	}
+	fmt.Printf("%s %d tunnel-suite service(s): %s\n", action, len(installed), strings.Join(installed, ", "))
+	return removeUnits(o, dir, installed)
+}
+
+// installedHint renders the list of installed service names for an error
+// message ("(installed: a, b)"), or an empty string when nothing is
+// installed.
+func installedHint(installed []string) string {
+	if len(installed) == 0 {
+		return ""
+	}
+	return " (installed: " + strings.Join(installed, ", ") + ")"
+}
+
+// removeUnits disables and deletes the given unit files, then reloads systemd
+// once. With dry-run it prints the commands and leaves everything alone. A
+// failure on one unit does not stop the others: every unit is attempted and
+// all errors are reported together.
+func removeUnits(o installOpts, dir string, names []string) error {
+	var errs []error
+	for _, name := range names {
+		if err := runSystemctl(o, "disable", "--now", name+".service"); err != nil {
+			errs = append(errs, fmt.Errorf("disable %s: %w", name, err))
+			continue
+		}
+		if o.dryRun {
+			continue
+		}
+		path := filepath.Join(dir, name+".service")
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("remove %s: %w", path, err))
+			continue
+		}
+		fmt.Printf("removed %s\n", path)
+	}
+	if !o.dryRun {
+		if err := runSystemctl(o, "daemon-reload"); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // runSystemctl runs one systemctl invocation (dry-run prints it only).

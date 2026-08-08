@@ -50,6 +50,7 @@ func TestHelpRendersSingleDash(t *testing.T) {
 		"server":         {"-listen", "-base-port", "-forward"},
 		"install":        nil,
 		"install client": {"-server", "-mode", "-local-port", "-uninstall"},
+		"uninstall":      {"-user", "-dry-run"},
 	}
 	for path, flags := range perCommandFlags {
 		t.Run(path, func(t *testing.T) {

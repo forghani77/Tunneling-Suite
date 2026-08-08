@@ -335,6 +335,23 @@ protocol), the mode (`--mode forward|socks`) and the local port
 `--uninstall` only needs that name, so the endpoint flags are not required to
 remove the service again.
 
+To remove services again, use the `uninstall` subcommand. It scans the unit
+directory for the services tunnel-suite installed and removes them:
+
+```sh
+sudo tunnel-suite uninstall                     # remove every tunnel-suite service
+sudo tunnel-suite uninstall tunnel-suite-server # remove just one (or more, by name)
+tunnel-suite uninstall --user                   # per-user services instead
+sudo tunnel-suite uninstall --dry-run           # list what would be removed
+```
+
+Service names tab-complete from the ones actually installed
+(`tunnel-suite uninstall tunnel-s<TAB>`), the `.service` suffix is optional,
+and any name not installed is rejected with a hint of what is. Discovery is
+by content (every installed unit references `tunnel-suite`), so custom
+`--name` units and even renamed binaries are found — services belonging to
+other software are never touched.
+
 #### System vs `--user` services
 
 `install server` and `install client` write a systemd unit and start it with

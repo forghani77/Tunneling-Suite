@@ -1,6 +1,9 @@
 package main
 
 import (
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -195,6 +198,154 @@ func TestValidateServerProtocols(t *testing.T) {
 	}
 }
 
+func TestFindTunnelSuiteUnits(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Two self-identifying units (default + custom --name) and one unit that
+	// belongs to other software and must never be touched.
+	write("tunnel-suite-server.service", "[Unit]\nDescription=tunnel-suite server (test + forwarding server)\nExecStart=/opt/bin/tunnel-suite server --forward\n")
+	write("my-custom-tunnel.service", "[Unit]\nDescription=tunnel-suite client (ws tunnel)\nExecStart=/opt/bin/tunnel-suite client --mode socks\n")
+	write("backhaul-kharej1234.service", "[Unit]\nDescription=backhaul tunnel\nExecStart=/opt/backhaul/backhaul\n")
+	write("unrelated.service", "[Unit]\nDescription=asset monitor\nExecStart=/usr/bin/assetmonitor\n")
+	// A renamed binary is still found: the Description marker stays.
+	write("renamed-bin.service", "[Unit]\nDescription=tunnel-suite server\nExecStart=/opt/ts/server\n")
+
+	got, err := findTunnelSuiteUnits(dir)
+	if err != nil {
+		t.Fatalf("findTunnelSuiteUnits: %v", err)
+	}
+	want := []string{"my-custom-tunnel", "renamed-bin", "tunnel-suite-server"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("found %v, want %v", got, want)
+	}
+
+	// A missing directory is not an error — nothing installed.
+	none, err := findTunnelSuiteUnits(filepath.Join(t.TempDir(), "nope"))
+	if err != nil || none != nil {
+		t.Errorf("missing dir: units = %v, err = %v, want nil, nil", none, err)
+	}
+}
+
+func TestFindTunnelSuiteUnitsSkipsDanglingSymlinks(t *testing.T) {
+	// /etc/systemd/system is full of dangling symlinks (units pointing at
+	// not-yet-installed files); the scan must skip them, not abort.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tunnel-suite-server.service"), []byte("tunnel-suite"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "gone.service"), filepath.Join(dir, "dangling.service")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := findTunnelSuiteUnits(dir)
+	if err != nil {
+		t.Fatalf("findTunnelSuiteUnits with dangling symlink: %v", err)
+	}
+	if len(got) != 1 || got[0] != "tunnel-suite-server" {
+		t.Errorf("units = %v, want just [tunnel-suite-server]", got)
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected to a pipe and returns what
+// was written, restoring the original stdout afterwards.
+func captureStdout(fn func()) string {
+	orig := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	defer func() { os.Stdout = orig }()
+	fn()
+	w.Close()
+	b, _ := io.ReadAll(r)
+	return string(b)
+}
+
+func TestUninstallAllInNames(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string) {
+		if err := os.WriteFile(filepath.Join(dir, name+".service"), []byte("Description=tunnel-suite\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("tunnel-suite-server")
+	write("my-custom-tunnel")
+	write("renamed-bin")
+
+	// Dry-run with a specific name lists only that unit; the .service suffix
+	// is tolerated and duplicates collapse.
+	var runErr error
+	out := captureStdout(func() {
+		runErr = uninstallAllIn(installOpts{dryRun: true}, dir, []string{"my-custom-tunnel.service", "my-custom-tunnel"})
+	})
+	if runErr != nil {
+		t.Fatalf("uninstallAllIn: %v", runErr)
+	}
+	if !strings.Contains(out, "would uninstall 1 tunnel-suite service(s): my-custom-tunnel") {
+		t.Errorf("dry-run output wrong:\n%s", out)
+	}
+
+	// An unknown name is rejected with a hint listing what is installed.
+	err := uninstallAllIn(installOpts{dryRun: true}, dir, []string{"nope"})
+	if err == nil || !strings.Contains(err.Error(), "no tunnel-suite service \"nope\" installed") || !strings.Contains(err.Error(), "installed: ") {
+		t.Errorf("unknown-name error = %v, want a hint about installed services", err)
+	}
+}
+
+func TestCompleteInstalledUnits(t *testing.T) {
+	installed := []string{"my-custom-tunnel", "renamed-bin", "tunnel-suite-server"}
+	cases := []struct {
+		prefix string
+		want   []string
+	}{
+		{"", []string{"my-custom-tunnel", "renamed-bin", "tunnel-suite-server"}},
+		{"tunnel-s", []string{"tunnel-suite-server"}},
+		{"my-", []string{"my-custom-tunnel"}},
+		{"zzz", nil},
+	}
+	for _, c := range cases {
+		got := completeInstalledUnits(installed, c.prefix)
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("completeInstalledUnits(%q) = %v, want %v", c.prefix, got, c.want)
+		}
+	}
+}
+
+func TestInstalledHint(t *testing.T) {
+	if got := installedHint(nil); got != "" {
+		t.Errorf("installedHint(nil) = %q, want empty", got)
+	}
+	if got := installedHint([]string{"a", "b"}); got != " (installed: a, b)" {
+		t.Errorf("installedHint([a b]) = %q", got)
+	}
+}
+
+func TestRemoveUnitsDryRun(t *testing.T) {
+	dir := t.TempDir()
+	name := "tunnel-suite-server"
+	path := filepath.Join(dir, name+".service")
+	if err := os.WriteFile(path, []byte("tunnel-suite"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Dry-run prints the disable command and leaves the file alone.
+	var runErr error
+	out := captureStdout(func() {
+		runErr = removeUnits(installOpts{user: true, dryRun: true}, dir, []string{name})
+	})
+	if runErr != nil {
+		t.Fatalf("removeUnits dry-run: %v", runErr)
+	}
+	if !strings.Contains(out, "systemctl --user disable --now tunnel-suite-server.service") {
+		t.Errorf("dry-run output missing the systemctl command:\n%s", out)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("dry-run removed the unit file: %v", err)
+	}
+}
+
 func TestUnitTemplate(t *testing.T) {
 	sys := unitTemplate("tunnel-suite server (test + forwarding server)", "/opt/bin/tunnel-suite server --forward", false)
 	for _, want := range []string{
@@ -222,4 +373,3 @@ func TestUnitTemplate(t *testing.T) {
 		}
 	}
 }
-

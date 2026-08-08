@@ -397,6 +397,7 @@ func init() {
 	// registered independently, so dynamic completion keeps working).
 	rootCmd.AddCommand(completionCmd())
 	rootCmd.AddCommand(installCmd())
+	rootCmd.AddCommand(uninstallCmd())
 	// Render help/usage with single-dash long flags (-forward, -server H),
 	// matching the input style the CLI accepts (--flag stays valid too).
 	installSingleDashHelp(rootCmd)
