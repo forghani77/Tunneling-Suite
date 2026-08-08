@@ -46,6 +46,7 @@ Results are rendered as a terminal table and written to a JSON report file.
 | `noise`      | stream      | Noise NNpsk0 record layer over TCP, keyed from `--password` | no          |
 | `shadowtls`  | stream      | ShadowTLS v3 — TLS records tagged with a token-derived HMAC | no          |
 | `trojan`     | stream      | Trojan — TLS + SHA-224(password) header, wire-compatible    | no          |
+| `hysteria2`  | stream      | Hysteria2 — HTTP/3 over QUIC + Salamander obfuscation + Brutal | no        |
 
 Notes:
 
@@ -200,9 +201,25 @@ Notes:
   password-derived greeting the server sends before the TLS handshake, so
   both ends agree on the keys without a decoy site. Every post-handshake
   record is authenticated: a peer without the token fails the HMAC on the
-  very first record and the server closes silently, so the port looks dead
+  very first record and the server closes silently,  so the port looks dead
   to scanners. Both `trojan` and `shadowtls` run over plain TCP with no
   separate key-exchange plane, so they work unchanged in `--blind` mode.
+- `hysteria2` runs the real Hysteria2 stack in-process
+  (`github.com/apernet/hysteria/core/v2`): a full HTTP/3 session over QUIC
+  where the client authenticates with a POST to a fixed URL and every
+  connection becomes a bidirectional QUIC stream. On top of plain QUIC it
+  adds two of the Hysteria2 toolkit's layers: **Salamander** packet
+  obfuscation (each UDP datagram carries an 8-byte random salt and its
+  payload is XORed with `BLAKE2b-256(PSK || salt)`, erasing the QUIC
+  magic-byte fingerprint) and **Brutal** congestion control (both ends pace
+  the tunnel at a fixed 200 Mbps regardless of loss). The Salamander PSK
+  and the auth payload both derive from `--password`, so a peer without the
+  token cannot even complete the QUIC handshake — every packet it sends is
+  obfuscated with the wrong key and the server discards it, so a port scan
+  finds a dead port. It runs over plain UDP with no separate control plane,
+  so it works unchanged in `--blind` mode; because Brutal is a fixed-rate
+  sender, `-throughput` results for it are bounded by the configured rate by
+  design.
 - If a protocol can't start (no privileges, no module), the server reports it
   unavailable and the client marks it **skipped** with the reason.
 - `bip`, `h3`, `ss`, `wg`, `awg`/`amneziawg`, `awg2`, `l2tap`/`l2`,
@@ -214,7 +231,8 @@ Notes:
   (`awg` → `amnezia`, `awg2` → `amnezia2`, `bip` → `sit`, `icmp6` →
   `icmpv6`, `icmp4`/`ping` → `icmp`, `six-to-four` → `6to4`, `l2tap` →
   `tap`, `naiveproxy` → `naive`, `nnpsk0` → `noise`, `shadow-tls` →
-  `shadowtls`, `trojangfw` → `trojan`, ...).
+  `shadowtls`, `trojangfw` → `trojan`, `hy2`/`hysteria`/`hysteria-2` →
+  `hysteria2`, ...).
 
 ## Quick start
 
@@ -265,7 +283,7 @@ tunnel-suite server [flags]
   --cert, --key        TLS certificate pair (default: ephemeral self-signed)
   --ss-password string Shadowsocks password (must match the client)
   --password string    shared secret for anytls/naive/ipsec/l2tp/noise/trojan/
-                       shadowtls (must match the client)
+                       shadowtls/hysteria2 (must match the client)
   --forward            enable relay sessions for client --mode forward|socks
 ```
 
@@ -286,7 +304,7 @@ tunnel-suite client [flags]
   --json string        JSON report path (default report-<timestamp>.json)
   --ss-password string Shadowsocks password (must match the server)
   --password string    shared secret for anytls/naive/ipsec/l2tp/noise/trojan/
-                       shadowtls (must match the server)
+                       shadowtls/hysteria2 (must match the server)
   --throughput string  comma-separated protocols to run a throughput speed
                        test against (default: none)
   --throughput-only [list]
@@ -500,6 +518,7 @@ JSON report records both (`protocols_base_port`, `control_port`).
 | +34       | noise (TCP)                              |
 | +35       | shadowtls (TCP)                          |
 | +36       | trojan (TCP)                             |
+| +37       | hysteria2 (QUIC/UDP)                     |
 
 ## How a test works
 
@@ -622,7 +641,7 @@ internal/protocol/      Tunnel/Protocol interfaces, framing, registry,
                         vxlan, vxlan-gpe, gue, ipsec, l2tp, icmp, icmpv6,
                         wireguard, amnezia, amnezia2, tap,
                         http, https, ws, wss, anytls, naive, smtp, noise,
-                        shadowtls, trojan)
+                        shadowtls, trojan, hysteria2)
 internal/benchmark/     the test runner (handshake/latency/loss metrics)
 internal/report/        result model, terminal table, JSON serialization
 internal/server/        server orchestration: listeners, echo loops, manifest

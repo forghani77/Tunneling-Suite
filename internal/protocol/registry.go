@@ -45,6 +45,7 @@ const (
 	PortNoise                  // +34: Noise NNpsk0 (TCP)
 	PortShadowTLS              // +35: ShadowTLS (TCP)
 	PortTrojan                 // +36: Trojan (TCP)
+	PortHysteria2              // +37: Hysteria2 (QUIC/UDP)
 )
 
 // All returns the full protocol registry in deterministic (port) order.
@@ -83,6 +84,7 @@ func All() []Protocol {
 		noiseProto{},
 		shadowTLSProto{},
 		trojanProto{},
+		hysteria2Proto{},
 	}
 }
 
@@ -166,6 +168,8 @@ func PortOffset(p Protocol) int {
 		return PortShadowTLS
 	case "trojan":
 		return PortTrojan
+	case "hysteria2":
+		return PortHysteria2
 	}
 	return -1
 }
@@ -239,6 +243,10 @@ var NameAliases = map[string]string{
 	"shadow-tls":  "shadowtls",
 	"shad0wtls":   "shadowtls",
 	"trojangfw":   "trojan",
+	"hy2":         "hysteria2",
+	"hysteria":    "hysteria2",
+	"hy-hysteria": "hysteria2",
+	"hysteria-2":  "hysteria2",
 }
 
 // NormalizeName canonicalizes a user-supplied protocol name.
